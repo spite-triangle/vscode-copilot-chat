@@ -4,6 +4,8 @@
 		"jsx": "react",
 		"jsxFactory": "vscpp",
 		"jsxFragmentFactory": "vscppf",
+		"noUnusedParameters": false,
+		"noUnusedLocals": false,
 		"rootDir": ".",
 		"types": [
 			"minimist",

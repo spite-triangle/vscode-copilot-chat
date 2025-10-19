@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ClientHttp2Stream } from 'http2';
-import type { CancellationToken } from 'vscode';
+import { Readable } from 'stream';
+import { type CancellationToken } from 'vscode';
 import { createRequestHMAC } from '../../../util/common/crypto';
 import { generateUuid } from '../../../util/vs/base/common/uuid';
 import { IInstantiationService, ServicesAccessor } from '../../../util/vs/platform/instantiation/common/instantiation';
@@ -22,6 +23,7 @@ import { sendEngineMessagesTelemetry } from '../../networking/node/chatStream';
 import { sendCommunicationErrorTelemetry } from '../../networking/node/stream';
 import { ITelemetryService, TelemetryProperties } from '../../telemetry/common/telemetry';
 import { TelemetryData } from '../../telemetry/common/telemetryData';
+
 
 /** based on https://platform.openai.com/docs/api-reference/chat/create */
 interface RequiredChatRequestParams {
@@ -139,7 +141,7 @@ export async function fetchAndStreamChat(
 	// Generate unique ID to link input and output messages
 	const modelCallId = generateUuid();
 
-	const response = await instantiationService.invokeFunction(accessor =>
+	const response1 = await instantiationService.invokeFunction(accessor =>
 		fetchWithInstrumentation(
 			accessor,
 			chatEndpointInfo,
@@ -152,6 +154,23 @@ export async function fetchAndStreamChat(
 			{ ...telemetryProperties, modelCallId },
 			useFetcher,
 		));
+
+	let data = await response1.text();
+
+	let response2 = new Response(200,
+		"",
+		new Map(),
+		() => {
+			return Promise.resolve('');;
+		},
+		() => {
+			return Promise.resolve({});
+		},
+		() => {
+			return Promise.resolve(Readable.from(data));
+		}
+	);
+	let response = response2;
 
 	if (cancel?.isCancellationRequested) {
 		const body = await response!.body();
@@ -178,6 +197,7 @@ export async function fetchAndStreamChat(
 
 	// Extend baseTelemetryData with modelCallId for output messages
 	const extendedBaseTelemetryData = baseTelemetryData.extendedBy({ modelCallId });
+
 
 	const chatCompletions = await chatEndpointInfo.processResponseFromChatEndpoint(
 		telemetryService,
@@ -501,6 +521,7 @@ async function fetchWithInstrumentation(
 
 	const requestStart = Date.now();
 	const intent = locationToIntent(location);
+
 
 	// Wrap the Promise with success/error callbacks so we can log/measure it
 	return postRequest(

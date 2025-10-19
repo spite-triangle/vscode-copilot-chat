@@ -1,234 +1,106 @@
-/*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
- *--------------------------------------------------------------------------------------------*/
 
-import { RequestType } from '@vscode/copilot-api';
-import type { LanguageModelChat } from 'vscode';
-import { createRequestHMAC } from '../../../util/common/crypto';
-import { TaskSingler } from '../../../util/common/taskSingler';
-import { Emitter, Event } from '../../../util/vs/base/common/event';
-import { Disposable } from '../../../util/vs/base/common/lifecycle';
-import { generateUuid } from '../../../util/vs/base/common/uuid';
-import { IInstantiationService, ServicesAccessor } from '../../../util/vs/platform/instantiation/common/instantiation';
-import { IAuthenticationService } from '../../authentication/common/authentication';
-import { IConfigurationService } from '../../configuration/common/configurationService';
-import { IEnvService } from '../../env/common/envService';
-import { ILogService } from '../../log/common/logService';
-import { IFetcherService } from '../../networking/common/fetcherService';
-import { getRequest } from '../../networking/common/networking';
-import { IRequestLogger } from '../../requestLogger/node/requestLogger';
-import { IExperimentationService } from '../../telemetry/common/nullExperimentationService';
-import { ITelemetryService } from '../../telemetry/common/telemetry';
-import { ICAPIClientService } from '../common/capiClient';
-import { ChatEndpointFamily, IChatModelInformation, ICompletionModelInformation, IEmbeddingModelInformation, IModelAPIResponse, isChatModelInformation, isCompletionModelInformation, isEmbeddingModelInformation } from '../common/endpointProvider';
-import { getMaxPromptTokens } from './chatEndpoint';
 
-export interface IModelMetadataFetcher {
+# 锁定 token
 
-	/**
-	 * Fires whenever we refresh the models from the server.
-	 * Does not always indicate there is a change, just that the data is fresh
-	 */
-	onDidModelsRefresh: Event<void>;
+写死 `token` 验证，**且需要调大 `expires_at` 配置，防止`token` 过期**
 
-	/**
-	 * Gets all the completion models known by the model fetcher endpoint
-	 */
-	getAllCompletionModels(forceRefresh: boolean): Promise<ICompletionModelInformation[]>;
 
-	/**
-	 * Gets all the chat models known by the model fetcher endpoint
-	 */
-	getAllChatModels(): Promise<IChatModelInformation[]>;
+```ts
+// src\platform\authentication\node\copilotTokenManager.ts
+    private async doAuthFromGitHubTokenOrDevDeviceId(
+        context: { githubToken: string; ghUsername: string } | { devDeviceId: string }
+    ): Promise<TokenInfoOrError & NotGitHubLoginFailed> {
+        this._telemetryService.sendGHTelemetryEvent('auth.new_login');
 
-	/**
-	 * Retrieves a chat model by its family name
-	 * @param family The family of the model to fetch
-	 */
-	getChatModelFromFamily(family: ChatEndpointFamily): Promise<IChatModelInformation>;
-
-	/**
-	 * Retrieves a chat model by its id
-	 * @param id The id of the chat model you want to get
-	 * @returns The chat model information if found, otherwise undefined
-	 */
-	getChatModelFromApiModel(model: LanguageModelChat): Promise<IChatModelInformation | undefined>;
-
-	/**
-	 * Retrieves an embeddings model by its family name
-	 * @param family The family of the model to fetch
-	 */
-	getEmbeddingsModel(family: 'text-embedding-3-small'): Promise<IEmbeddingModelInformation>;
-}
-
-/**
- * Responsible for interacting with the CAPI Model API
- * This is solely owned by the EndpointProvider (and TestEndpointProvider) which uses this service to power server side rollout of models
- * All model acquisition should be done through the EndpointProvider
- */
-export class ModelMetadataFetcher extends Disposable implements IModelMetadataFetcher {
-
-	private static readonly ALL_MODEL_KEY = 'allModels';
-
-	private _familyMap: Map<string, IModelAPIResponse[]> = new Map();
-	private _completionsFamilyMap: Map<string, IModelAPIResponse[]> = new Map();
-	private _copilotBaseModel: IModelAPIResponse | undefined;
-	private _lastFetchTime: number = 0;
-	private readonly _taskSingler = new TaskSingler<IModelAPIResponse | undefined | void>();
-	private _lastFetchError: any;
-
-	private readonly _onDidModelRefresh = new Emitter<void>();
-	public onDidModelsRefresh = this._onDidModelRefresh.event;
-
-	constructor(
-		private readonly collectFetcherTelemetry: ((accessor: ServicesAccessor, error: any) => void) | undefined,
-		protected readonly _isModelLab: boolean,
-		@IFetcherService private readonly _fetcher: IFetcherService,
-		@IRequestLogger private readonly _requestLogger: IRequestLogger,
-		@ICAPIClientService private readonly _capiClientService: ICAPIClientService,
-		@IConfigurationService private readonly _configService: IConfigurationService,
-		@IExperimentationService private readonly _expService: IExperimentationService,
-		@IEnvService private readonly _envService: IEnvService,
-		@IAuthenticationService private readonly _authService: IAuthenticationService,
-		@ITelemetryService private readonly _telemetryService: ITelemetryService,
-		@ILogService private readonly _logService: ILogService,
-		@IInstantiationService private readonly _instantiationService: IInstantiationService,
-	) {
-		super();
-		this._register(this._authService.onDidAuthenticationChange(() => {
-			// Auth changed so next fetch should be forced to get a new list
-			this._familyMap.clear();
-			this._completionsFamilyMap.clear();
-			this._lastFetchTime = 0;
-		}));
-	}
-
-	public async getAllCompletionModels(forceRefresh: boolean): Promise<ICompletionModelInformation[]> {
-		await this._taskSingler.getOrCreate(ModelMetadataFetcher.ALL_MODEL_KEY, () => this._fetchModels(forceRefresh));
-		const completionModels: ICompletionModelInformation[] = [];
-		for (const [, models] of this._completionsFamilyMap) {
-			for (const model of models) {
-				if (isCompletionModelInformation(model)) {
-					completionModels.push(model);
-				}
+		let response1, userInfo, ghUsername;
+		try {
+			if ('githubToken' in context) {
+				ghUsername = context.ghUsername;
+				[response1, userInfo] = (await Promise.all([
+					this.fetchCopilotTokenFromGitHubToken(context.githubToken),
+					this.fetchCopilotUserInfo(context.githubToken)
+				]));
+			} else {
+				response1 = await this.fetchCopilotTokenFromDevDeviceId(context.devDeviceId);
 			}
-		}
-		return completionModels;
-	}
 
-	public async getAllChatModels(): Promise<IChatModelInformation[]> {
-		await this._taskSingler.getOrCreate(ModelMetadataFetcher.ALL_MODEL_KEY, this._fetchModels.bind(this));
-
-
-
-		const chatModels: IChatModelInformation[] = [];
-		for (const [, models] of this._familyMap) {
-			for (const model of models) {
-				if (isChatModelInformation(model)) {
-					chatModels.push(model);
-				}
+			if (!response1) {
+				this._logService.warn('Failed to get copilot token');
+				this._telemetryService.sendGHTelemetryErrorEvent('auth.request_failed');
+				return { kind: 'failure', reason: 'FailedToGetToken' };
 			}
-		}
-		return chatModels;
-	}
+			let json = await response1.json();
+			this._logService.debug(`${JSON.stringify(json)}`);
+		} catch {
 
-	/**
-	 * Hydrates a model API response from the `/models` endpoint with proper exp overrides and error handling
-	 * @param resolvedModel The resolved model to hydrate
-	 * @returns The resolved model with proper exp overrides and token counts
-	 */
-	private async _hydrateResolvedModel(resolvedModel: IModelAPIResponse | undefined): Promise<IModelAPIResponse> {
-		resolvedModel = resolvedModel ? await this._findExpOverride(resolvedModel) : undefined;
-		if (!resolvedModel) {
-			throw this._lastFetchError;
 		}
 
-		// If it's a chat model, update max prompt tokens based on settings + exp
-		if (isChatModelInformation(resolvedModel) && (resolvedModel.capabilities.limits)) {
-			resolvedModel.capabilities.limits.max_prompt_tokens = getMaxPromptTokens(this._configService, this._expService, resolvedModel);
-			// Also ensure prompt tokens + output tokens <= context window. Output tokens is capped to max 15% input tokens
-			const outputTokens = Math.floor(Math.min(resolvedModel.capabilities.limits.max_output_tokens ?? 4096, resolvedModel.capabilities.limits.max_prompt_tokens * 0.15));
-			const contextWindow = resolvedModel.capabilities.limits.max_context_window_tokens ?? (outputTokens + resolvedModel.capabilities.limits.max_prompt_tokens);
-			resolvedModel.capabilities.limits.max_prompt_tokens = Math.min(resolvedModel.capabilities.limits.max_prompt_tokens, contextWindow - outputTokens);
-		}
-		if (resolvedModel.preview && !resolvedModel.name.endsWith('(Preview)')) {
-			// If the model is a preview model, we append (Preview) to the name
-			resolvedModel.name = `${resolvedModel.name} (Preview)`;
-		}
-		return resolvedModel;
-	}
 
-	public async getChatModelFromFamily(family: ChatEndpointFamily): Promise<IChatModelInformation> {
-		await this._taskSingler.getOrCreate(ModelMetadataFetcher.ALL_MODEL_KEY, this._fetchModels.bind(this));
-		let resolvedModel: IModelAPIResponse | undefined = this._copilotBaseModel;
-		if (family === 'gpt-4.1') {
-			resolvedModel = this._familyMap.get('gpt-4.1')?.[0] ?? this._familyMap.get('gpt-4o')?.[0];
-		} else if (family === 'gpt-4o-mini') {
-			resolvedModel = this._familyMap.get('gpt-4o-mini')?.[0];
-		} else if (family === 'copilot-base') {
-			resolvedModel = this._copilotBaseModel;
-		} else {
-			resolvedModel = this._familyMap.get(family)?.[0];
-		}
-		if (!resolvedModel || !isChatModelInformation(resolvedModel)) {
-			throw new Error(`Unable to resolve chat model with family selection: ${family}`);
-		}
-		return resolvedModel;
-	}
+		let config = vscode.workspace.getConfiguration('github.copilot.baseModel');
+		let apiurl = config.has('url') ? config.get('url') : "https://api.individual.githubcopilot.com";
 
-	public async getChatModelFromApiModel(apiModel: LanguageModelChat): Promise<IChatModelInformation | undefined> {
-		await this._taskSingler.getOrCreate(ModelMetadataFetcher.ALL_MODEL_KEY, this._fetchModels.bind(this));
-		let resolvedModel: IModelAPIResponse | undefined;
-		for (const models of this._familyMap.values()) {
-			resolvedModel = models.find(model =>
-				model.id === apiModel.id &&
-				model.version === apiModel.version &&
-				model.capabilities.family === apiModel.family);
-			if (resolvedModel) {
-				break;
+		// NOTE - TOKEN 验证
+		let data = JSON.parse(`
+		{
+			"annotations_enabled": false,
+			"blackbird_clientside_indexing": false,
+			"chat_enabled": true,
+			"chat_jetbrains_enabled": false,
+			"code_quote_enabled": false,
+			"code_review_enabled": false,
+			"codesearch": false,
+			"copilotignore_enabled": false,
+			"endpoints": {
+				"api": "${apiurl}",
+				"origin-tracker": "https://origin-tracker.individual.githubcopilot.com",
+				"proxy": "https://proxy.individual.githubcopilot.com",
+				"telemetry": "https://telemetry.individual.githubcopilot.com"
+			},
+			"expires_at": 2760850265,
+			"individual": false,
+			"prompt_8k": true,
+			"public_suggestions": "disabled",
+			"refresh_in": 300,
+			"sku": "free_limited_copilot",
+			"snippy_load_test_enabled": false,
+			"telemetry": "disabled",
+			"token": "tid=70b36c9e-ea08-48c2-b28e-0dd535b39982;exp=1760850265;sku=free_limited_copilot;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;malfil=1;agent_mode=1;mcp=1;8kp=1;ip=103.135.103.18;asn=AS38136:55183d53996e868667171d1850e50f4b318ee14f91da013658423649da8279e9",
+			"tracking_id": "70b36c9e-ea08-48c2-b28e-0dd535b39982",
+			"vsc_electron_fetcher_v2": false,
+			"xcode": false,
+			"xcode_chat": false
+		}
+		`);
+
+		let response2 = new Response(200,
+			"",
+			new Map(),
+			() => {
+				return Promise.resolve(JSON.stringify(data));;
+			},
+			() => {
+				return Promise.resolve(data);
+			},
+			() => {
+				return Promise.resolve(data);
 			}
-		}
-		if (!resolvedModel) {
-			return;
-		}
-		if (!isChatModelInformation(resolvedModel)) {
-			throw new Error(`Unable to resolve chat model: ${apiModel.id},${apiModel.name},${apiModel.version},${apiModel.family}`);
-		}
-		return resolvedModel;
-	}
+		);
 
-	public async getEmbeddingsModel(family: 'text-embedding-3-small'): Promise<IEmbeddingModelInformation> {
-		await this._taskSingler.getOrCreate(ModelMetadataFetcher.ALL_MODEL_KEY, this._fetchModels.bind(this));
-		const resolvedModel = this._familyMap.get(family)?.[0];
-		if (!resolvedModel || !isEmbeddingModelInformation(resolvedModel)) {
-			throw new Error(`Unable to resolve embeddings model with family selection: ${family}`);
-		}
-		return resolvedModel;
-	}
+		let response = response2;
 
-	private _shouldRefreshModels(): boolean {
-		if (this._familyMap.size === 0) {
-			return true;
-		}
-		const tenMinutes = 10 * 60 * 1000; // 10 minutes in milliseconds
-		const now = Date.now();
+        // ...
+    }
+```
 
-		if (!this._lastFetchTime) {
-			return true; // If there's no last fetch time, we should refresh
-		}
+# 模型配置
 
-		// We only want to fetch models if the current session is active
-		if (!this._envService.isActive) {
-			return false;
-		}
+## 全部模型获取
 
-		const timeSinceLastFetch = now - this._lastFetchTime;
+写死模型配置，**写死的模型配置并不能被使用，只是为了让代码运行通过**
 
-		return timeSinceLastFetch > tenMinutes;
-	}
-
-	private async _fetchModels(force?: boolean): Promise<void> {
+```js
+// src\platform\endpoint\node\modelMetadataFetcher.ts
+    private async _fetchModels(force?: boolean): Promise<void> {
 		if (!force && !this._shouldRefreshModels()) {
 			return;
 		}
@@ -239,7 +111,6 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 		const requestMetadata = { type: RequestType.Models, isModelLab: this._isModelLab };
 
 		try {
-
 			// const response = await getRequest(
 			// 	this._fetcher,
 			// 	this._telemetryService,
@@ -263,12 +134,10 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 			// 	throw new Error(`Failed to fetch models (${requestId}): ${(await response.text()) || response.statusText || `HTTP ${response.status}`}`);
 			// }
 
-
-			// NOTE - 模型配置，只是用于通过验证，实际配置利用 OAI 插件
 			this._familyMap.clear();
 
 			let models = JSON.parse(`
-				 [
+				    [
 						{
 							"auto": true,
 							"billing": {
@@ -968,105 +837,119 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 						}
 					]
 			`);
+            // ...
+    }
+```
 
-			const data: IModelAPIResponse[] = models as IModelAPIResponse[];
-			// const data: IModelAPIResponse[] = (await response.json()).data;
-			this._requestLogger.logModelListCall(requestId, requestMetadata, data);
-			for (let model of data) {
-				model = await this._hydrateResolvedModel(model);
-				const isCompletionModel = isCompletionModelInformation(model);
-				// The base model is whatever model is deemed "fallback" by the server
-				if (model.is_chat_fallback && !isCompletionModel) {
-					this._copilotBaseModel = model;
-				}
-				const family = model.capabilities.family;
-				const familyMap = isCompletionModel ? this._completionsFamilyMap : this._familyMap;
-				if (!familyMap.has(family)) {
-					familyMap.set(family, []);
-				}
-				familyMap.get(family)?.push(model);
-			}
-			this._lastFetchError = undefined;
-			this._onDidModelRefresh.fire();
+# 模型会话
 
-			if (this.collectFetcherTelemetry) {
-				this._instantiationService.invokeFunction(this.collectFetcherTelemetry, undefined);
-			}
-		} catch (e) {
-			this._logService.error(e, `Failed to fetch models (${requestId})`);
-			this._lastFetchError = e;
-			this._lastFetchTime = 0;
-			// If we fail to fetch models, we should try again next time
-			if (this.collectFetcherTelemetry) {
-				this._instantiationService.invokeFunction(this.collectFetcherTelemetry, e);
-			}
-		}
+ 写死模型会话获取，**需要调大 `expires_at` 自动值，防止会话过期**
+
+```ts
+    // src\platform\endpoint\common\automodeService.ts
+    private async _updateAutoEndpointCache(chatRequest: ChatRequest | undefined, knownEndpoints: IChatEndpoint[]): Promise<IChatEndpoint> {
+        const startTime = Date.now();
+        const conversationId = getConversationId(chatRequest);
+        const cacheEntry = this._autoModelCache.get(conversationId);
+        const existingToken = cacheEntry?.autoModeToken;
+        const isExpired = cacheEntry && (cacheEntry.expiration <= Date.now());
+        const authToken = (await this._authService.getCopilotToken()).token;
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+        };
+        if (existingToken && !isExpired) {
+            headers['Copilot-Session-Token'] = existingToken;
+        }
+
+        // const response = await this._capiClientService.makeRequest<Response>({
+        // 	json: {
+        // 		"auto_mode": { "model_hints": ["auto"] },
+        // 	},
+        // 	headers,
+        // 	method: 'POST'
+        // }, { type: RequestType.AutoModels });
+        // const data: AutoModeAPIResponse = await response.json() as AutoModeAPIResponse;
+
+        // NOTE - 模型会话
+        let data: AutoModeAPIResponse = JSON.parse(
+            `
+            {
+                "available_models": [
+                    "gpt-5-mini"
+                ],
+                "selected_model": "gpt-5-mini",
+                "session_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdmFpbGFibGVfbW9kZWxzIjpbImdwdC01LW1pbmkiXSwic2VsZWN0ZWRfbW9kZWwiOiJncHQtNS1taW5pIiwic3ViIjoiNzBiMzZjOWUtZWEwOC00OGMyLWIyOGUtMGRkNTM1YjM5OTgyIiwiaWF0IjoxNzYwMDI5OTEzLCJleHAiOjE3NjAwMzM1MTMsImRpc2NvdW50ZWRfY29zdHMiOnsiZ3B0LTUtbWluaSI6MC4xfX0.0ldG2uQkBiuiC7BtHHbFvqFrEsxo50L5Jaai5BZWoRd9M_lX8hWr-waNdx6zQ1qVQUIVnwa-AIw7ENHvPNMvIw",
+                "expires_at": 2770033513,
+                "discounted_costs": {
+                    "gpt-5-mini": 0.1
+                }
+            }
+            `
+        );
+        // ..
+    }
+```
+
+# 修改基本模型
+
+```ts
+// src\platform\networking\common\networking.ts
+function networkRequest(
+	fetcher: IFetcher,
+	telemetryService: ITelemetryService,
+	capiClientService: ICAPIClientService,
+	requestType: 'GET' | 'POST',
+	endpointOrUrl: IEndpoint | string | RequestMetadata,
+	secretKey: string,
+	intent: string,
+	requestId: string,
+	body?: IEndpointBody,
+	additionalHeaders?: Record<string, string>,
+	cancelToken?: CancellationToken,
+	useFetcher?: FetcherId,
+): Promise<Response> {
+	// TODO @lramos15 Eventually don't even construct this fake endpoint object.
+	const endpoint = typeof endpointOrUrl === 'string' || 'type' in endpointOrUrl ? {
+		modelMaxPromptTokens: 0,
+		urlOrRequestMetadata: endpointOrUrl,
+		family: '',
+		tokenizer: TokenizerType.O200K,
+		acquireTokenizer: () => {
+			throw new Error('Method not implemented.');
+		},
+		name: '',
+		version: '',
+	} satisfies IEndpoint : endpointOrUrl;
+
+
+	let config = vscode.workspace.getConfiguration('github.copilot.baseModel');
+	let apikey = config.has('apikey') ? config.get('apikey') : secretKey;
+
+	const headers: ReqHeaders = {
+		Authorization: `Bearer ${apikey}`,
+		'X-Request-Id': requestId,
+		'X-Interaction-Type': intent,
+		'OpenAI-Intent': intent, // Tells CAPI who flighted this request. Helps find buggy features
+		'X-GitHub-Api-Version': '2025-05-01',
+		...additionalHeaders,
+		...(endpoint.getExtraHeaders ? endpoint.getExtraHeaders() : {}),
+	};
+
+	if (endpoint.interceptBody) {
+		endpoint.interceptBody(body);
 	}
 
-	private async _fetchModel(modelId: string): Promise<IModelAPIResponse | undefined> {
-		const copilotToken = (await this._authService.getCopilotToken()).token;
-		const requestId = generateUuid();
-		const requestMetadata = { type: RequestType.ListModel, modelId: modelId };
-
-		try {
-			const response = await getRequest(
-				this._fetcher,
-				this._telemetryService,
-				this._capiClientService,
-				requestMetadata,
-				copilotToken,
-				await createRequestHMAC(process.env.HMAC_SECRET),
-				'model-access',
-				requestId,
-			);
-
-			const data: IModelAPIResponse = await response.json();
-			if (response.status !== 200) {
-				this._logService.error(`Failed to fetch model ${modelId} (requestId: ${requestId}): ${JSON.stringify(data)}`);
-				return;
-			}
-			this._requestLogger.logModelListCall(requestId, requestMetadata, [data]);
-			if (data.capabilities.type === 'completion') {
-				return;
-			}
-			// Functions that call this method, check the family map first so this shouldn't result in duplicate entries
-			if (this._familyMap.has(data.capabilities.family)) {
-				this._familyMap.get(data.capabilities.family)?.push(data);
-			} else {
-				this._familyMap.set(data.capabilities.family, [data]);
-			}
-			this._onDidModelRefresh.fire();
-			return data;
-		} catch {
-			// Couldn't find this model, must not be availabe in CAPI.
-			return undefined;
-		}
+	if (body) {
+		body.model = config.get('model');
+		body.max_tokens = config.has('max_tokens') ? config.get('max_tokens') : body.max_tokens;
+		body.max_output_tokens = config.has('max_output_tokens') ? config.get('max_output_tokens') : body.max_output_tokens;
+		body.max_completion_tokens = config.has('max_completion_tokens') ? config.get('max_completion_tokens') : body.max_completion_tokens;
+		body.temperature = config.has('temperature') ? config.get('temperature') : body.temperature;
+		body.top_p = config.has('top_p') ? config.get('top_p') : body.top_p;
+		body.stream = config.has('stream') ? config.get('strean') : body.stream;
+		body.n = config.has('n') ? config.get('n') : body.n;
 	}
-
-	private async _findExpOverride(resolvedModel: IModelAPIResponse): Promise<IModelAPIResponse | undefined> {
-		// This is a mapping of model id to model id. Allowing us to override the request for any model with a different model
-		let modelExpOverrides: { [key: string]: string } = {};
-		const expResult = this._expService.getTreatmentVariable<string>('copilotchat.modelOverrides');
-		try {
-			modelExpOverrides = JSON.parse(expResult || '{}');
-		} catch {
-			// No-op if parsing experiment fails
-		}
-		if (modelExpOverrides[resolvedModel.id]) {
-			for (const [, models] of this._familyMap) {
-				const model = models.find(m => m.id === modelExpOverrides[resolvedModel.id]);
-				// Found the model in the cache, return it
-				if (model) {
-					return model;
-				}
-			}
-			const experimentalModel = await this._taskSingler.getOrCreate(modelExpOverrides[resolvedModel.id], () => this._fetchModel(modelExpOverrides[resolvedModel.id]));
-
-			// Use the experimental model if it exists, otherwise fallback to the normal model we resolved
-			resolvedModel = experimentalModel ?? resolvedModel;
-		}
-		return resolvedModel;
-	}
+	// ....
 }
-
-//#endregion
+```

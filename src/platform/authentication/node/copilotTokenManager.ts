@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RequestType } from '@vscode/copilot-api';
+import * as vscode from 'vscode';
 import { Emitter } from '../../../util/vs/base/common/event';
 import { Disposable, toDisposable } from '../../../util/vs/base/common/lifecycle';
 import { SyncDescriptor } from '../../../util/vs/platform/instantiation/common/descriptors';
@@ -118,27 +119,85 @@ export abstract class BaseCopilotTokenManager extends Disposable implements ICop
 		return this.doAuthFromGitHubTokenOrDevDeviceId({ devDeviceId });
 	}
 
-	private async doAuthFromGitHubTokenOrDevDeviceId(
+	async doAuthFromGitHubTokenOrDevDeviceId(
 		context: { githubToken: string; ghUsername: string } | { devDeviceId: string }
 	): Promise<TokenInfoOrError & NotGitHubLoginFailed> {
 		this._telemetryService.sendGHTelemetryEvent('auth.new_login');
 
-		let response, userInfo, ghUsername;
-		if ('githubToken' in context) {
-			ghUsername = context.ghUsername;
-			[response, userInfo] = (await Promise.all([
-				this.fetchCopilotTokenFromGitHubToken(context.githubToken),
-				this.fetchCopilotUserInfo(context.githubToken)
-			]));
-		} else {
-			response = await this.fetchCopilotTokenFromDevDeviceId(context.devDeviceId);
+		let response1, userInfo, ghUsername;
+		try {
+			if ('githubToken' in context) {
+				ghUsername = context.ghUsername;
+				[response1, userInfo] = (await Promise.all([
+					this.fetchCopilotTokenFromGitHubToken(context.githubToken),
+					this.fetchCopilotUserInfo(context.githubToken)
+				]));
+			} else {
+				response1 = await this.fetchCopilotTokenFromDevDeviceId(context.devDeviceId);
+			}
+
+			if (!response1) {
+				this._logService.warn('Failed to get copilot token');
+				this._telemetryService.sendGHTelemetryErrorEvent('auth.request_failed');
+				return { kind: 'failure', reason: 'FailedToGetToken' };
+			}
+			let json = await response1.json();
+			this._logService.debug(`${JSON.stringify(json)}`);
+		} catch {
+
 		}
 
-		if (!response) {
-			this._logService.warn('Failed to get copilot token');
-			this._telemetryService.sendGHTelemetryErrorEvent('auth.request_failed');
-			return { kind: 'failure', reason: 'FailedToGetToken' };
+		let config = vscode.workspace.getConfiguration('github.copilot.baseModel');
+		let apiurl = config.has('url') ? config.get('url') : "https://api.individual.githubcopilot.com";
+
+		// NOTE - TOKEN 验证
+		let data = JSON.parse(`
+		{
+			"annotations_enabled": false,
+			"blackbird_clientside_indexing": false,
+			"chat_enabled": true,
+			"chat_jetbrains_enabled": false,
+			"code_quote_enabled": false,
+			"code_review_enabled": false,
+			"codesearch": false,
+			"copilotignore_enabled": false,
+			"endpoints": {
+				"api": "${apiurl}",
+				"origin-tracker": "https://origin-tracker.individual.githubcopilot.com",
+				"proxy": "https://proxy.individual.githubcopilot.com",
+				"telemetry": "https://telemetry.individual.githubcopilot.com"
+			},
+			"expires_at": 2760850265,
+			"individual": false,
+			"prompt_8k": true,
+			"public_suggestions": "disabled",
+			"refresh_in": 300,
+			"sku": "free_limited_copilot",
+			"snippy_load_test_enabled": false,
+			"telemetry": "disabled",
+			"token": "tid=70b36c9e-ea08-48c2-b28e-0dd535b39982;exp=1760850265;sku=free_limited_copilot;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;malfil=1;agent_mode=1;mcp=1;8kp=1;ip=103.135.103.18;asn=AS38136:55183d53996e868667171d1850e50f4b318ee14f91da013658423649da8279e9",
+			"tracking_id": "70b36c9e-ea08-48c2-b28e-0dd535b39982",
+			"vsc_electron_fetcher_v2": false,
+			"xcode": false,
+			"xcode_chat": false
 		}
+		`);
+
+		let response2 = new Response(200,
+			"",
+			new Map(),
+			() => {
+				return Promise.resolve(JSON.stringify(data));;
+			},
+			() => {
+				return Promise.resolve(data);
+			},
+			() => {
+				return Promise.resolve(data);
+			}
+		);
+
+		let response = response2 as Response;
 
 		// FIXME: Unverified type after inputting response
 		const tokenInfo: undefined | TokenInfo = await jsonVerboseError(response);
@@ -177,7 +236,8 @@ export abstract class BaseCopilotTokenManager extends Disposable implements ICop
 		tokenInfo.expires_at = nowSeconds() + tokenInfo.refresh_in + 60; // extra buffer to allow refresh to happen successfully
 
 		// extend the token envelope
-		const login = ghUsername ?? 'unknown';
+		// const login = ghUsername ?? 'unknown';
+		const login = 'unknown';
 		let isVscodeTeamMember = false;
 		// VS Code team members are guaranteed to be a part of an internal org so we can check that first to minimize API calls
 		if (containsInternalOrg(tokenInfo.organization_list ?? []) && 'githubToken' in context) {
@@ -185,9 +245,9 @@ export abstract class BaseCopilotTokenManager extends Disposable implements ICop
 		}
 		const extendedInfo: ExtendedTokenInfo = {
 			...tokenInfo,
-			copilot_plan: userInfo?.copilot_plan ?? tokenInfo.sku ?? '',
-			quota_snapshots: userInfo?.quota_snapshots,
-			quota_reset_date: userInfo?.quota_reset_date,
+			copilot_plan: tokenInfo.sku ?? '',
+			// quota_snapshots: userInfo?.quota_snapshots,
+			// quota_reset_date: userInfo?.quota_reset_date,
 			username: login,
 			isVscodeTeamMember,
 		};

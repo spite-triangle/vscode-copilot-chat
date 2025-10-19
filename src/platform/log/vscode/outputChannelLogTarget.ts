@@ -16,16 +16,17 @@ export class NewOutputChannelLogTarget implements ILogTarget {
 
 	constructor(extensionContext: ExtensionContext) {
 		outputChannel = this._outputChannel;
+		this._outputChannel.logLevel
 		extensionContext.subscriptions.push(this._outputChannel);
 	}
 
 	logIt(level: LogLevel, metadataStr: string, ...extra: any[]) {
 		switch (level) {
 			case LogLevel.Trace:
-				this._outputChannel.trace(metadataStr);
+				this._outputChannel.info(metadataStr);
 				break;
 			case LogLevel.Debug:
-				this._outputChannel.debug(metadataStr);
+				this._outputChannel.info(metadataStr);
 				break;
 			case LogLevel.Info:
 				this._outputChannel.info(metadataStr);

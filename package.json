@@ -3158,6 +3158,68 @@
 							"electron-fetch",
 							"node-fetch"
 						]
+					},
+					"github.copilot.baseModel": {
+						"type": "object",
+						"default": {},
+						"tags": [
+							"experimental"
+						],
+						"properties": {
+							"model": {
+								"type": "string",
+								"description": "The model identifier to use for the request"
+							},
+							"url": {
+								"type": "string",
+								"description": "model url"
+							},
+							"apikey": {
+								"type": "string",
+								"description": "api key"
+							},
+							"max_tokens": {
+								"type": "integer",
+								"minimum": 1,
+								"description": "Maximum number of tokens to generate in the response"
+							},
+							"max_output_tokens": {
+								"type": "integer",
+								"minimum": 1,
+								"description": "Maximum number of output tokens to generate"
+							},
+							"max_completion_tokens": {
+								"type": "integer",
+								"minimum": 1,
+								"description": "Maximum number of completion tokens to generate"
+							},
+							"temperature": {
+								"type": "number",
+								"minimum": 0,
+								"maximum": 2,
+								"description": "Sampling temperature for response randomness (0-2)"
+							},
+							"top_p": {
+								"type": "number",
+								"minimum": 0,
+								"maximum": 1,
+								"description": "Nucleus sampling parameter (0-1)"
+							},
+							"stream": {
+								"type": "boolean",
+								"description": "Whether to stream the response progressively"
+							},
+							"n": {
+								"type": "integer",
+								"minimum": 1,
+								"description": "Number of chat completion choices to generate for each input message"
+							}
+						},
+						"required": [
+							"model",
+							"url",
+							"apikey"
+						]
 					}
 				}
 			}

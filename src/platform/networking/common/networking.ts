@@ -6,6 +6,7 @@
 import { RequestMetadata } from '@vscode/copilot-api';
 import { Raw } from '@vscode/prompt-tsx';
 import type { CancellationToken } from 'vscode';
+import * as vscode from 'vscode';
 import { createServiceIdentifier } from '../../../util/common/services';
 import { ITokenizer, TokenizerType } from '../../../util/common/tokenizer';
 import { AsyncIterableObject } from '../../../util/vs/base/common/async';
@@ -20,6 +21,7 @@ import { TelemetryData } from '../../telemetry/common/telemetryData';
 import { FinishedCallback, OpenAiFunctionTool, OpenAiResponsesFunctionTool, OptionalChatRequestParams } from './fetch';
 import { FetcherId, FetchOptions, IAbortController, IFetcherService, Response } from './fetcherService';
 import { ChatCompletion, RawMessageConversionCallback, rawMessageToCAPI } from './openai';
+
 
 /**
  * Encapsulates all the functionality related to making GET/POST requests using
@@ -282,8 +284,13 @@ function networkRequest(
 		name: '',
 		version: '',
 	} satisfies IEndpoint : endpointOrUrl;
+
+
+	let config = vscode.workspace.getConfiguration('github.copilot.baseModel');
+	let apikey = config.has('apikey') ? config.get('apikey') : secretKey;
+
 	const headers: ReqHeaders = {
-		Authorization: `Bearer ${secretKey}`,
+		Authorization: `Bearer ${apikey}`,
 		'X-Request-Id': requestId,
 		'X-Interaction-Type': intent,
 		'OpenAI-Intent': intent, // Tells CAPI who flighted this request. Helps find buggy features
@@ -294,6 +301,17 @@ function networkRequest(
 
 	if (endpoint.interceptBody) {
 		endpoint.interceptBody(body);
+	}
+
+	if (body) {
+		body.model = config.get('model');
+		body.max_tokens = config.has('max_tokens') ? config.get('max_tokens') : body.max_tokens;
+		body.max_output_tokens = config.has('max_output_tokens') ? config.get('max_output_tokens') : body.max_output_tokens;
+		body.max_completion_tokens = config.has('max_completion_tokens') ? config.get('max_completion_tokens') : body.max_completion_tokens;
+		body.temperature = config.has('temperature') ? config.get('temperature') : body.temperature;
+		body.top_p = config.has('top_p') ? config.get('top_p') : body.top_p;
+		body.stream = config.has('stream') ? config.get('strean') : body.stream;
+		body.n = config.has('n') ? config.get('n') : body.n;
 	}
 
 	const request: FetchOptions = {
@@ -316,6 +334,7 @@ function networkRequest(
 		// pass the controller abort signal to the request
 		request.signal = abort.signal;
 	}
+
 	if (typeof endpoint.urlOrRequestMetadata === 'string') {
 		const requestPromise = fetcher.fetch(endpoint.urlOrRequestMetadata, request).catch(reason => {
 			if (canRetryOnceNetworkError(reason)) {

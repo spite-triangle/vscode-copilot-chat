@@ -8,6 +8,7 @@ import { IEnvService } from '../../env/common/envService';
 import { FetchOptions, IAbortController, Response } from '../common/fetcherService';
 import { IFetcher, userAgentLibraryHeader } from '../common/networking';
 
+
 export abstract class BaseFetchFetcher implements IFetcher {
 
 	constructor(
@@ -47,7 +48,15 @@ export abstract class BaseFetchFetcher implements IFetcher {
 	}
 
 	private async _fetch(url: string, method: 'GET' | 'POST', headers: { [name: string]: string }, body: string | undefined, signal: AbortSignal): Promise<Response> {
-		const resp = await this._fetchImpl(url, { method, headers, body, signal });
+		// const resp = await this._fetchImpl(url, { method, headers, body, signal });
+		const resp = await this._fetchImpl(url,
+			{
+				method: method,
+				headers: headers,
+				body: body,
+				signal: signal
+			}
+		);
 		return new Response(
 			resp.status,
 			resp.statusText,

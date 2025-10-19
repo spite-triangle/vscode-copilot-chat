@@ -287,6 +287,7 @@ export class SSEProcessor {
 		}
 	}
 
+	// NOTE - 处理 openai 响应结果
 	private async *processSSEInner(finishedCb: FinishedCallback): AsyncIterable<FinishedCompletion | APIUsage> {
 		// Collects pieces of the SSE stream that haven't been fully processed yet.
 		let extraData = '';
