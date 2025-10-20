@@ -351,7 +351,22 @@ function networkRequest(
 		});
 		return requestPromise;
 	} else {
-		return capiClientService.makeRequest(request, endpoint.urlOrRequestMetadata as RequestMetadata);
+
+		const requestPromise = fetcher.fetch(`${config.get('url')}/chat/completions`, request).catch(reason => {
+			if (canRetryOnceNetworkError(reason)) {
+				// disconnect and retry the request once if the connection was reset
+				telemetryService.sendGHTelemetryEvent('networking.disconnectAll');
+				return fetcher.disconnectAll().then(() => {
+					return fetcher.fetch(endpoint.urlOrRequestMetadata as string, request);
+				});
+			} else if (fetcher.isAbortError(reason)) {
+				throw new CancellationError();
+			} else {
+				throw reason;
+			}
+		});
+		return requestPromise;
+		// return capiClientService.makeRequest(request, endpoint.urlOrRequestMetadata as RequestMetadata);
 	}
 }
 

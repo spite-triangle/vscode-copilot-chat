@@ -170,7 +170,7 @@ export async function fetchAndStreamChat(
 			return Promise.resolve(Readable.from(data));
 		}
 	);
-	let response = response2;
+	const response = response2;
 
 	if (cancel?.isCancellationRequested) {
 		const body = await response!.body();

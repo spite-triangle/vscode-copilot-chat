@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RequestType } from '@vscode/copilot-api';
+import { Readable } from 'stream';
 import * as vscode from 'vscode';
 import { Emitter } from '../../../util/vs/base/common/event';
 import { Disposable, toDisposable } from '../../../util/vs/base/common/lifecycle';
@@ -141,59 +142,95 @@ export abstract class BaseCopilotTokenManager extends Disposable implements ICop
 				this._telemetryService.sendGHTelemetryErrorEvent('auth.request_failed');
 				return { kind: 'failure', reason: 'FailedToGetToken' };
 			}
-			let json = await response1.json();
-			this._logService.debug(`${JSON.stringify(json)}`);
 		} catch {
 
 		}
 
 		let config = vscode.workspace.getConfiguration('github.copilot.baseModel');
 		let apiurl = config.has('url') ? config.get('url') : "https://api.individual.githubcopilot.com";
-
+		// '{"sku":"yearly_subscriber","token":"tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761006846;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f","expire_at":1761006846,"prompt_8k":true,"telemetry":"disabled","expires_at":1761006846,"individual":true,"refresh_in":86400,"nes_enabled":true,"tracking_id":"…r":false,"code_quote_enabled":true,"public_suggestions":"disabled","annotations_enabled":true,"vsc_electron_fetcher":false,"copilotignore_enabled":false,"chat_jetbrains_enabled":true,"intellij_editor_fetcher":false,"snippy_load_test_enabled":false,"copilot_ide_agent_chat_gpt4_small_prompt":false,"code_review_enabled":false,"codesearch":true,"limited_user_quotas":{"chat":500,"completions":2000},"limited_user_reset_date":1761006846,"vsc_electron_fetcher_v2":false,"xcode_chat":false,"xcode":true}'
 		// NOTE - TOKEN 验证
-		let data = JSON.parse(`
-		{
-			"annotations_enabled": false,
-			"blackbird_clientside_indexing": false,
-			"chat_enabled": true,
-			"chat_jetbrains_enabled": false,
-			"code_quote_enabled": false,
-			"code_review_enabled": false,
-			"codesearch": false,
-			"copilotignore_enabled": false,
-			"endpoints": {
-				"api": "${apiurl}",
-				"origin-tracker": "https://origin-tracker.individual.githubcopilot.com",
-				"proxy": "https://proxy.individual.githubcopilot.com",
-				"telemetry": "https://telemetry.individual.githubcopilot.com"
-			},
-			"expires_at": 2760850265,
-			"individual": false,
-			"prompt_8k": true,
-			"public_suggestions": "disabled",
-			"refresh_in": 300,
-			"sku": "free_limited_copilot",
-			"snippy_load_test_enabled": false,
-			"telemetry": "disabled",
-			"token": "tid=70b36c9e-ea08-48c2-b28e-0dd535b39982;exp=1760850265;sku=free_limited_copilot;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;malfil=1;agent_mode=1;mcp=1;8kp=1;ip=103.135.103.18;asn=AS38136:55183d53996e868667171d1850e50f4b318ee14f91da013658423649da8279e9",
-			"tracking_id": "70b36c9e-ea08-48c2-b28e-0dd535b39982",
-			"vsc_electron_fetcher_v2": false,
-			"xcode": false,
-			"xcode_chat": false
-		}
-		`);
+		let data1 = `
+			{
+				"sku": "yearly_subscriber",
+				"token": "tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761007296;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f",
+				"expire_at": 2761007296,
+				"prompt_8k": true,
+				"telemetry": "disabled",
+				"expires_at": 2761007296,
+				"individual": true,
+				"refresh_in": 86400,
+				"nes_enabled": true,
+				"tracking_id": "b42207b857c9db3b7b4e71fce67a4070",
+				"chat_enabled": true,
+				"vsc_panel_v2": false,
+				"vs_editor_fetcher": false,
+				"code_quote_enabled": true,
+				"public_suggestions": "disabled",
+				"annotations_enabled": true,
+				"vsc_electron_fetcher": false,
+				"copilotignore_enabled": false,
+				"chat_jetbrains_enabled": true,
+				"intellij_editor_fetcher": false,
+				"snippy_load_test_enabled": false,
+				"copilot_ide_agent_chat_gpt4_small_prompt": false,
+				"code_review_enabled": false,
+				"codesearch": true,
+				"limited_user_quotas": {
+					"chat": 500,
+					"completions": 2000
+				},
+				"limited_user_reset_date": 1761007296,
+				"vsc_electron_fetcher_v2": false,
+				"xcode_chat": false,
+				"xcode": true
+			}
+		`;
+
+		let data2 = `
+			{
+				"annotations_enabled": false,
+				"blackbird_clientside_indexing": false,
+				"chat_enabled": true,
+				"chat_jetbrains_enabled": false,
+				"code_quote_enabled": false,
+				"code_review_enabled": false,
+				"codesearch": false,
+				"copilotignore_enabled": false,
+				"endpoints": {
+					"api": "https://api.individual.githubcopilot.com",
+					"origin-tracker": "https://origin-tracker.individual.githubcopilot.com",
+					"proxy": "https://proxy.individual.githubcopilot.com",
+					"telemetry": "https://telemetry.individual.githubcopilot.com"
+				},
+				"expires_at": 2760850265,
+				"individual": false,
+				"prompt_8k": true,
+				"public_suggestions": "disabled",
+				"refresh_in": 300,
+				"sku": "no_auth_limited_copilot",
+				"snippy_load_test_enabled": false,
+				"telemetry": "disabled",
+				"token": "tid=70b36c9e-ea08-48c2-b28e-0dd535b39982;exp=1760850265;sku=no_auth_limited_copilot;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;malfil=1;agent_mode=1;mcp=1;8kp=1;ip=103.135.103.18;asn=AS38136:55183d53996e868667171d1850e50f4b318ee14f91da013658423649da8279e9",
+				"tracking_id": "70b36c9e-ea08-48c2-b28e-0dd535b39982",
+				"vsc_electron_fetcher_v2": false,
+				"xcode": false,
+				"xcode_chat": false
+			}
+		`;
+		let data = data1;
 
 		let response2 = new Response(200,
 			"",
 			new Map(),
 			() => {
-				return Promise.resolve(JSON.stringify(data));;
+				return Promise.resolve(data);;
 			},
 			() => {
-				return Promise.resolve(data);
+				return Promise.resolve({});
 			},
 			() => {
-				return Promise.resolve(data);
+				return Promise.resolve(Readable.from(data));
 			}
 		);
 

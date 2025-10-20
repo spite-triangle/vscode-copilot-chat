@@ -16,7 +16,6 @@ export class NewOutputChannelLogTarget implements ILogTarget {
 
 	constructor(extensionContext: ExtensionContext) {
 		outputChannel = this._outputChannel;
-		this._outputChannel.logLevel
 		extensionContext.subscriptions.push(this._outputChannel);
 	}
 

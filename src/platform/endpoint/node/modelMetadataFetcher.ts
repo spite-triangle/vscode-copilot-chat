@@ -267,7 +267,7 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 			// NOTE - 模型配置，只是用于通过验证，实际配置利用 OAI 插件
 			this._familyMap.clear();
 
-			let models = JSON.parse(`
+			const models = JSON.parse(`
 				 [
 						{
 							"auto": true,

@@ -80,7 +80,7 @@ export class AutomodeService extends Disposable implements IAutomodeService {
 		}
 
 		// NOTE - 模型会话
-		let data2: AutoModeAPIResponse = JSON.parse(
+		const data2: AutoModeAPIResponse = JSON.parse(
 			`
 			{
 				"available_models": [
@@ -96,7 +96,7 @@ export class AutomodeService extends Disposable implements IAutomodeService {
 			`
 		);
 
-		let data = data2;
+		const data = data2;
 
 		const selectedModel = knownEndpoints.find(e => e.model === data.selected_model) || knownEndpoints[0];
 		const autoEndpoint = new AutoChatEndpoint(selectedModel, this._chatMLFetcher, data.session_token, data.discounted_costs?.[selectedModel.model] || 0);
