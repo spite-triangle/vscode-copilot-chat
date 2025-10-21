@@ -5,7 +5,6 @@
 
 import { RequestType } from '@vscode/copilot-api';
 import { Readable } from 'stream';
-import * as vscode from 'vscode';
 import { Emitter } from '../../../util/vs/base/common/event';
 import { Disposable, toDisposable } from '../../../util/vs/base/common/lifecycle';
 import { SyncDescriptor } from '../../../util/vs/platform/instantiation/common/descriptors';
@@ -146,8 +145,6 @@ export abstract class BaseCopilotTokenManager extends Disposable implements ICop
 
 		}
 
-		let config = vscode.workspace.getConfiguration('github.copilot.baseModel');
-		let apiurl = config.has('url') ? config.get('url') : "https://api.individual.githubcopilot.com";
 		// '{"sku":"yearly_subscriber","token":"tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761006846;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f","expire_at":1761006846,"prompt_8k":true,"telemetry":"disabled","expires_at":1761006846,"individual":true,"refresh_in":86400,"nes_enabled":true,"tracking_id":"…r":false,"code_quote_enabled":true,"public_suggestions":"disabled","annotations_enabled":true,"vsc_electron_fetcher":false,"copilotignore_enabled":false,"chat_jetbrains_enabled":true,"intellij_editor_fetcher":false,"snippy_load_test_enabled":false,"copilot_ide_agent_chat_gpt4_small_prompt":false,"code_review_enabled":false,"codesearch":true,"limited_user_quotas":{"chat":500,"completions":2000},"limited_user_reset_date":1761006846,"vsc_electron_fetcher_v2":false,"xcode_chat":false,"xcode":true}'
 		// NOTE - TOKEN 验证
 		let data1 = `
@@ -234,7 +231,7 @@ export abstract class BaseCopilotTokenManager extends Disposable implements ICop
 			}
 		);
 
-		let response = response2 as Response;
+		let response = response1 as Response;
 
 		// FIXME: Unverified type after inputting response
 		const tokenInfo: undefined | TokenInfo = await jsonVerboseError(response);

@@ -239,35 +239,30 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 		const requestMetadata = { type: RequestType.Models, isModelLab: this._isModelLab };
 
 		try {
+			let models;
 
-			// const response = await getRequest(
-			// 	this._fetcher,
-			// 	this._telemetryService,
-			// 	this._capiClientService,
-			// 	requestMetadata,
-			// 	copilotToken,
-			// 	await createRequestHMAC(process.env.HMAC_SECRET),
-			// 	'model-access',
-			// 	requestId,
-			// );
+			try {
+				const response = await getRequest(
+					this._fetcher,
+					this._telemetryService,
+					this._capiClientService,
+					requestMetadata,
+					copilotToken,
+					await createRequestHMAC(process.env.HMAC_SECRET),
+					'model-access',
+					requestId,
+				);
 
-			// this._lastFetchTime = Date.now();
-			// this._logService.info(`Fetched model metadata in ${Date.now() - requestStartTime}ms ${requestId}`);
+				this._lastFetchTime = Date.now();
+				this._logService.info(`Fetched model metadata in ${Date.now() - requestStartTime}ms ${requestId}`);
 
-			// if (response.status < 200 || response.status >= 300) {
-			// 	// If we're rate limited and have models, we should just return
-			// 	if (response.status === 429 && this._familyMap.size > 0) {
-			// 		this._logService.warn(`Rate limited while fetching models ${requestId}`);
-			// 		return;
-			// 	}
-			// 	throw new Error(`Failed to fetch models (${requestId}): ${(await response.text()) || response.statusText || `HTTP ${response.status}`}`);
-			// }
+				if (!response.ok) {
+					throw Error('failed to request');
+				}
 
-
-			// NOTE - 模型配置，只是用于通过验证，实际配置利用 OAI 插件
-			this._familyMap.clear();
-
-			const models = JSON.parse(`
+				models = (await response.json()).data;
+			} catch (e) {
+				models = JSON.parse(`
 				 [
 						{
 							"auto": true,
@@ -968,6 +963,13 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 						}
 					]
 			`);
+
+			}
+
+
+			// NOTE - 模型配置，只是用于通过验证，实际配置利用 OAI 插件
+			this._familyMap.clear();
+
 
 			const data: IModelAPIResponse[] = models as IModelAPIResponse[];
 			// const data: IModelAPIResponse[] = (await response.json()).data;

@@ -63,10 +63,16 @@ export class RemoteEmbeddingsComputer implements IEmbeddingsComputer {
 				return embeddings ?? { type: embeddingType, values: [] };
 			}
 
-			const token = (await this._authService.getAnyGitHubSession({ silent: true }))?.accessToken;
-			if (!token) {
-				throw new Error('No authentication token available');
+			let token;
+			try {
+				token = (await this._authService.getAnyGitHubSession({ silent: true }))?.accessToken;
+				if (!token) {
+					throw new Error('No authentication token available');
+				}
+			} catch (e) {
+				token = '';
 			}
+			// const token = '';
 
 			const embeddingsOut: Embedding[] = [];
 			for (let i = 0; i < inputs.length; i += this.batchSize) {
@@ -88,7 +94,7 @@ export class RemoteEmbeddingsComputer implements IEmbeddingsComputer {
 					this._fetcherService,
 					this._telemetryService,
 					this._capiClientService,
-					{ type: RequestType.DotcomEmbeddings },
+					{ type: RequestType.CAPIEmbeddings },
 					token,
 					await createRequestHMAC(env.HMAC_SECRET),
 					'copilot-panel',

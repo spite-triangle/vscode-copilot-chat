@@ -65,7 +65,7 @@ export class AutomodeService extends Disposable implements IAutomodeService {
 			headers['Copilot-Session-Token'] = existingToken;
 		}
 
-		let data1: AutoModeAPIResponse;
+		let data: AutoModeAPIResponse;
 		try {
 			const response = await this._capiClientService.makeRequest<Response>({
 				json: {
@@ -74,14 +74,10 @@ export class AutomodeService extends Disposable implements IAutomodeService {
 				headers,
 				method: 'POST'
 			}, { type: RequestType.AutoModels });
-			data1 = await response.json() as AutoModeAPIResponse;
+			data = await response.json() as AutoModeAPIResponse;
 		} catch (e) {
-
-		}
-
-		// NOTE - 模型会话
-		const data2: AutoModeAPIResponse = JSON.parse(
-			`
+			data = JSON.parse(
+				`
 			{
 				"available_models": [
 					"gpt-5-mini"
@@ -94,10 +90,11 @@ export class AutomodeService extends Disposable implements IAutomodeService {
 				}
 			}
 			`
-		);
+			);
 
-		const data = data2;
+		}
 
+		// NOTE - 模型会话
 		const selectedModel = knownEndpoints.find(e => e.model === data.selected_model) || knownEndpoints[0];
 		const autoEndpoint = new AutoChatEndpoint(selectedModel, this._chatMLFetcher, data.session_token, data.discounted_costs?.[selectedModel.model] || 0);
 		this._autoModelCache.set(conversationId, {
