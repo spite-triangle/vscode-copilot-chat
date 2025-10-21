@@ -86,7 +86,6 @@ describe('OpenAIEndpoint - Reasoning Properties', () => {
 
 	describe('CAPI mode (useResponsesApi = false)', () => {
 		it('should set cot_id and cot_summary properties when processing thinking content', () => {
-			accessor.get(IConfigurationService).setConfig(ConfigKey.UseResponsesApi, false);
 			const endpoint = instaService.createInstance(OpenAIEndpoint,
 				modelMetadata,
 				'test-api-key',
@@ -105,7 +104,6 @@ describe('OpenAIEndpoint - Reasoning Properties', () => {
 		});
 
 		it('should handle multiple messages with thinking content', () => {
-			accessor.get(IConfigurationService).setConfig(ConfigKey.UseResponsesApi, false);
 			const endpoint = instaService.createInstance(OpenAIEndpoint,
 				modelMetadata,
 				'test-api-key',

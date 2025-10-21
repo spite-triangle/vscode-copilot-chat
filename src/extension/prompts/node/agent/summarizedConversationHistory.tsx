@@ -445,7 +445,6 @@ class ConversationHistorySummarizer {
 			this.props.endpoint;
 
 		let summarizationPrompt: ChatMessage[];
-		const associatedRequestId = this.props.promptContext.conversation?.getLatestTurn().id;
 		const promptCacheMode = this.configurationService.getExperimentBasedConfig(ConfigKey.Internal.AgentHistorySummarizationWithPromptCache, this.experimentationService);
 		try {
 			if (mode === SummaryMode.Full && promptCacheMode) {
@@ -503,7 +502,6 @@ class ConversationHistorySummarizer {
 					stream: false,
 					...toolOpts
 				},
-				telemetryProperties: associatedRequestId ? { associatedRequestId } : undefined,
 				enableRetryOnFilter: true
 			}, this.token ?? CancellationToken.None);
 		} catch (e) {

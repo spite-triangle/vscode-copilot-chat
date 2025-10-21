@@ -287,7 +287,6 @@ export class SSEProcessor {
 		}
 	}
 
-	// NOTE - 处理 openai 响应结果
 	private async *processSSEInner(finishedCb: FinishedCallback): AsyncIterable<FinishedCompletion | APIUsage> {
 		// Collects pieces of the SSE stream that haven't been fully processed yet.
 		let extraData = '';
@@ -446,13 +445,11 @@ export class SSEProcessor {
 
 					let handled = true;
 					if (choice.delta?.tool_calls) {
-						if (!this.toolCalls.hasToolCalls()) {
+						if (!this.toolCalls.hasToolCalls() && solution.text.length > 0) {
 							const firstToolName = choice.delta.tool_calls.at(0)?.function?.name;
 							if (firstToolName) {
-								if (solution.text.length) {
-									// Flush the linkifier stream. See #16465
-									solution.append({ index: 0, delta: { content: ' ' } });
-								}
+								// Flush the linkifier stream. See #16465
+								solution.append({ index: 0, delta: { content: ' ' } });
 								await emitSolution({ beginToolCalls: [{ name: firstToolName }] });
 							}
 						}

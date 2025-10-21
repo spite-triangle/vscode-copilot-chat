@@ -80,7 +80,6 @@ import { TestProvider } from '../../../platform/testing/vscode/testProviderImpl'
 import { ITokenizerProvider, TokenizerProvider } from '../../../platform/tokenizer/node/tokenizer';
 import { IWorkspaceService } from '../../../platform/workspace/common/workspaceService';
 import { ExtensionTextDocumentManager } from '../../../platform/workspace/vscode/workspaceServiceImpl';
-import { GithubAvailableEmbeddingTypesService, IGithubAvailableEmbeddingTypesService } from '../../../platform/workspaceChunkSearch/common/githubAvailableEmbeddingTypes';
 import { SyncDescriptor } from '../../../util/vs/platform/instantiation/common/descriptors';
 import { CommandServiceImpl, ICommandService } from '../../commands/node/commandService';
 import { IPromptWorkspaceLabels, PromptWorkspaceLabels } from '../../context/node/resolvers/promptWorkspaceLabels';
@@ -181,7 +180,6 @@ export function createExtensionTestingServices(): TestingServiceCollection {
 	testingServiceCollection.define(IToolGroupingCache, new SyncDescriptor(ToolGroupingCache));
 	testingServiceCollection.define(IToolGroupingService, new SyncDescriptor(ToolGroupingService));
 	testingServiceCollection.define(ITodoListContextProvider, new SyncDescriptor(TodoListContextProvider));
-	testingServiceCollection.define(IGithubAvailableEmbeddingTypesService, new SyncDescriptor(GithubAvailableEmbeddingTypesService));
 
 	return testingServiceCollection;
 }

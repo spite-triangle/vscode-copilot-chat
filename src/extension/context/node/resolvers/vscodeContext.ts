@@ -9,20 +9,18 @@ import { extractCodeBlocks } from '../../../../util/common/markdown';
 
 export interface VSCodeParticipantMetadata {
 	commandToRun?: Command;
+	showCodeBlock: boolean;
+	codeBlock?: string;
 }
 
-/**
- * Parses a raw Markdown string containing a code block and extracts settings and commands to show as options to user.
- * @param codeBlock Markdown string containing a single code block surrounded by "```"
- */
-export async function parseSettingsAndCommands(workbenchService: IWorkbenchService, codeBlock: string): Promise<VSCodeParticipantMetadata[]> {
-	const parsedCodeBlock = extractCodeBlocks(codeBlock);
+export async function parseSettingsAndCommands(workbenchService: IWorkbenchService, json: string): Promise<VSCodeParticipantMetadata[]> {
 
-	// parsedCodeBlock is expected to only have a single element.
-	for (const block of parsedCodeBlock) {
-		// Skip non-JSON blocks, only process JSON blocks for settings/commands
+	const codeBlock = extractCodeBlocks(json);
+
+	for (const block of codeBlock) {
+
 		if (block.language !== 'json' && block.language !== '') {
-			return [];
+			return [{ commandToRun: undefined, showCodeBlock: true }];
 		}
 
 		let parsed: ParsedItem[] = [];
@@ -49,6 +47,13 @@ export async function parseSettingsAndCommands(workbenchService: IWorkbenchServi
 				}
 				return true;
 			});
+			// combine all settings into a single code block
+			const codeBlock = `\`\`\`\n${JSON.stringify(parsed.reduce((acc: Record<string, any>, item: ParsedItem) => {
+				if (item.details) {
+					acc[item.details.key] = item.details.value;
+				}
+				return acc;
+			}, {}), null, 2)}\n\`\`\``;
 
 			const settingsQuery = parsed.reduce((acc: string, item: ParsedItem) => {
 				if (item.details) {
@@ -62,7 +67,9 @@ export async function parseSettingsAndCommands(workbenchService: IWorkbenchServi
 					command: 'workbench.action.openSettings',
 					arguments: [settingsQuery],
 					title: l10n.t("Show in Settings Editor"),
-				}
+				},
+				showCodeBlock: true,
+				codeBlock: codeBlock,
 			});
 
 			return parsedMetadata;
@@ -104,7 +111,7 @@ export async function parseSettingsAndCommands(workbenchService: IWorkbenchServi
 						command: 'workbench.extensions.search',
 						arguments: args,
 						title: l10n.t("Search Extension Marketplace"),
-					}
+					}, showCodeBlock: false,
 				});
 				return parsedMetadata;
 			}
@@ -119,13 +126,13 @@ export async function parseSettingsAndCommands(workbenchService: IWorkbenchServi
 						command: 'workbench.action.quickOpen',
 						arguments: [`>${commandItem.label ?? ''}`],
 						title: parsedMetadata.length > 1 ? l10n.t('Show "{0}"', commandItem.label ?? '') : l10n.t("Show in Command Palette"),
-					}
+					}, showCodeBlock: false,
 				});
 				return parsedMetadata;
 			}
 		}
 	}
-	return [];
+	return [{ commandToRun: undefined, showCodeBlock: true }];
 
 }
 

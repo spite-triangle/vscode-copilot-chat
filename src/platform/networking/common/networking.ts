@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { RequestMetadata } from '@vscode/copilot-api';
+import { CopilotToken, RequestMetadata, RequestType } from '@vscode/copilot-api';
 import { Raw } from '@vscode/prompt-tsx';
 import type { CancellationToken } from 'vscode';
 import * as vscode from 'vscode';
@@ -21,7 +21,6 @@ import { TelemetryData } from '../../telemetry/common/telemetryData';
 import { FinishedCallback, OpenAiFunctionTool, OpenAiResponsesFunctionTool, OptionalChatRequestParams } from './fetch';
 import { FetcherId, FetchOptions, IAbortController, IFetcherService, Response } from './fetcherService';
 import { ChatCompletion, RawMessageConversionCallback, rawMessageToCAPI } from './openai';
-
 
 /**
  * Encapsulates all the functionality related to making GET/POST requests using
@@ -83,6 +82,7 @@ export interface IEndpointBody {
 	/** Embeddings endpoints only: */
 	dimensions?: number;
 	embed?: boolean;
+	encoding_format?: string;
 	/** Chunking endpoints: */
 	qos?: any;
 	content?: string;
@@ -285,8 +285,14 @@ function networkRequest(
 		version: '',
 	} satisfies IEndpoint : endpointOrUrl;
 
-
 	let config = vscode.workspace.getConfiguration('github.copilot.baseModel');
+	if (typeof endpoint.urlOrRequestMetadata !== 'string') {
+		let type = endpoint.urlOrRequestMetadata.type;
+		if (type == RequestType.CAPIEmbeddings) {
+			config = vscode.workspace.getConfiguration('github.copilot.embeddingModel');
+		}
+	}
+
 	let apikey = config.has('apikey') ? config.get('apikey') : secretKey;
 
 	const headers: ReqHeaders = {
@@ -312,6 +318,8 @@ function networkRequest(
 		body.top_p = config.has('top_p') ? config.get('top_p') : body.top_p;
 		body.stream = config.has('stream') ? config.get('strean') : body.stream;
 		body.n = config.has('n') ? config.get('n') : body.n;
+		body.dimensions = config.has('dimensions') ? config.get('dimensions') : body.dimensions;
+		body.encoding_format = config.has('encoding_format') ? config.get('encoding_format') : body.encoding_format;
 	}
 
 	const request: FetchOptions = {
@@ -334,7 +342,6 @@ function networkRequest(
 		// pass the controller abort signal to the request
 		request.signal = abort.signal;
 	}
-
 	if (typeof endpoint.urlOrRequestMetadata === 'string') {
 		const requestPromise = fetcher.fetch(endpoint.urlOrRequestMetadata, request).catch(reason => {
 			if (canRetryOnceNetworkError(reason)) {
@@ -352,31 +359,15 @@ function networkRequest(
 		return requestPromise;
 	} else {
 
-		// const requestPromise = fetcher.fetch(`${config.get('url')}/chat/completions`, request).catch(reason => {
-		// 	if (canRetryOnceNetworkError(reason)) {
-		// 		// disconnect and retry the request once if the connection was reset
-		// 		telemetryService.sendGHTelemetryEvent('networking.disconnectAll');
-		// 		return fetcher.disconnectAll().then(() => {
-		// 			return fetcher.fetch(endpoint.urlOrRequestMetadata as string, request);
-		// 		});
-		// 	} else if (fetcher.isAbortError(reason)) {
-		// 		throw new CancellationError();
-		// 	} else {
-		// 		throw reason;
-		// 	}
-		// });
-		// return requestPromise;
+		let url: string = config.has('url') ? config.get('url') as string : "https://api.githubcopilot.com";
 
-		// let url: string = config.has('url') ? config.get('url') as string : "https://api.githubcopilot.com";
-
-		// let token: CopilotToken = {
-		// 	endpoints: {
-		// 		api: url,
-		// 	},
-		// 	sku: 'no_auth_limited_copilot'
-		// };
-		// capiClientService.updateDomains(token, url);
-
+		let token: CopilotToken = {
+			endpoints: {
+				api: url,
+			},
+			sku: 'free_limited_copilot'
+		};
+		capiClientService.updateDomains(token, url);
 
 		return capiClientService.makeRequest(request, endpoint.urlOrRequestMetadata as RequestMetadata);
 	}

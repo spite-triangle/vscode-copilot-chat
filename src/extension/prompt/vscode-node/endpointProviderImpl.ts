@@ -118,14 +118,9 @@ export class ProductionEndpointProvider implements IEndpointProvider {
 		let endpoint: IChatEndpoint;
 		if (typeof requestOrFamilyOrModel === 'string') {
 			// The family case, resolve the chat model for the passed in family
-			// try{
-			// 	endpoint = this._instantiationService.createInstance(ExtensionContributedChatEndpoint, model);
-			// }catch(e){
-			// }
 			let modelMetadata = await this._modelFetcher.getChatModelFromFamily(requestOrFamilyOrModel);
 			modelMetadata = applyExperimentModifications(modelMetadata, experimentModelConfig);
 			endpoint = this.getOrCreateChatEndpointInstance(modelMetadata!);
-
 		} else {
 			const model = 'model' in requestOrFamilyOrModel ? requestOrFamilyOrModel.model : requestOrFamilyOrModel;
 			if (experimentModelConfig && model && model.id === experimentModelConfig.id) {

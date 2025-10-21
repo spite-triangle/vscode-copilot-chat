@@ -22,10 +22,10 @@ export class NewOutputChannelLogTarget implements ILogTarget {
 	logIt(level: LogLevel, metadataStr: string, ...extra: any[]) {
 		switch (level) {
 			case LogLevel.Trace:
-				this._outputChannel.info(metadataStr);
+				this._outputChannel.trace(metadataStr);
 				break;
 			case LogLevel.Debug:
-				this._outputChannel.info(metadataStr);
+				this._outputChannel.debug(metadataStr);
 				break;
 			case LogLevel.Info:
 				this._outputChannel.info(metadataStr);

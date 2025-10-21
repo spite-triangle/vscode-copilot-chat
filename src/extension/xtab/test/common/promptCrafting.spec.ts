@@ -197,27 +197,8 @@ suite('Paged clipping - current file', () => {
 			10,
 			{ ...opts, maxTokens: 20 },
 		);
-		expect(result).toMatchInlineSnapshot(`
-			ResultOk {
-			  "val": {
-			    "nLines": 6,
-			    "taggedCurrentFileContent": "21
-			<area_around_code_to_edit>
-			22
-			23
-			<code_to_edit>
-			24
-			25
-			<code_to_edit>
-			26
-			</area_around_code_to_edit>
-			27
-			28
-			29
-			30",
-			  },
-			}
-		`);
+		assert(result.isError());
+		expect(result.err).toMatchInlineSnapshot(`"outOfBudget"`);
 	});
 
 

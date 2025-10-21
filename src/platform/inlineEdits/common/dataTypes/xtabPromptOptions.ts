@@ -40,7 +40,6 @@ export type PromptOptions = {
 	readonly recentlyViewedDocuments: RecentlyViewedDocumentsOptions;
 	readonly languageContext: LanguageContextOptions;
 	readonly diffHistory: DiffHistoryOptions;
-	readonly includePostScript: boolean;
 }
 
 /**
@@ -82,7 +81,6 @@ export const DEFAULT_OPTIONS: PromptOptions = {
 		onlyForDocsInPrompt: false,
 		useRelativePaths: false,
 	},
-	includePostScript: true,
 };
 
 // TODO: consider a better per language setting/experiment approach

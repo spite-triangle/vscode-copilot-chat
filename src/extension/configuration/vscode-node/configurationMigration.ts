@@ -135,6 +135,16 @@ export class ConfigurationMigrationContribution implements IExtensionContributio
 }
 
 ConfigurationMigrationRegistry.registerConfigurationMigrations([{
+	key: 'github.copilot.chat.experimental.startDebugging.enabled',
+	migrateFn: async (value: any) => {
+		return [
+			['github.copilot.chat.startDebugging.enabled', { value }],
+			['github.copilot.chat.experimental.startDebugging.enabled', { value: undefined }]
+		];
+	}
+}]);
+
+ConfigurationMigrationRegistry.registerConfigurationMigrations([{
 	key: 'github.copilot.chat.experimental.setupTests.enabled',
 	migrateFn: async (value: any) => {
 		return [

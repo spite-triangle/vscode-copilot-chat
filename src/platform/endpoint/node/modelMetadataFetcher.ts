@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RequestType } from '@vscode/copilot-api';
-import type { LanguageModelChat } from 'vscode';
+import { workspace, type LanguageModelChat } from 'vscode';
 import { createRequestHMAC } from '../../../util/common/crypto';
 import { TaskSingler } from '../../../util/common/taskSingler';
 import { Emitter, Event } from '../../../util/vs/base/common/event';
@@ -119,9 +119,6 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 
 	public async getAllChatModels(): Promise<IChatModelInformation[]> {
 		await this._taskSingler.getOrCreate(ModelMetadataFetcher.ALL_MODEL_KEY, this._fetchModels.bind(this));
-
-
-
 		const chatModels: IChatModelInformation[] = [];
 		for (const [, models] of this._familyMap) {
 			for (const model of models) {
@@ -161,7 +158,7 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 
 	public async getChatModelFromFamily(family: ChatEndpointFamily): Promise<IChatModelInformation> {
 		await this._taskSingler.getOrCreate(ModelMetadataFetcher.ALL_MODEL_KEY, this._fetchModels.bind(this));
-		let resolvedModel: IModelAPIResponse | undefined = this._copilotBaseModel;
+		let resolvedModel: IModelAPIResponse | undefined;
 		if (family === 'gpt-4.1') {
 			resolvedModel = this._familyMap.get('gpt-4.1')?.[0] ?? this._familyMap.get('gpt-4o')?.[0];
 		} else if (family === 'gpt-4o-mini') {
@@ -242,6 +239,11 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 			let models;
 
 			try {
+				let config = workspace.getConfiguration('github.copilot').get('forceOffline');
+				if (config) {
+					throw Error('offline');
+				}
+
 				const response = await getRequest(
 					this._fetcher,
 					this._telemetryService,
@@ -388,7 +390,7 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 								]
 							},
 							"capabilities": {
-								"family": "gpt-3.5-turbo",
+								"family": "text-embedding-3-small",
 								"limits": {
 									"max_context_window_tokens": 16384,
 									"max_output_tokens": 4096,
@@ -400,7 +402,7 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 									"tool_calls": true
 								},
 								"tokenizer": "cl100k_base",
-								"type": "chat"
+								"type": "embeddings"
 							},
 							"id": "gpt-3.5-turbo",
 							"is_chat_default": false,
@@ -974,8 +976,9 @@ export class ModelMetadataFetcher extends Disposable implements IModelMetadataFe
 			const data: IModelAPIResponse[] = models as IModelAPIResponse[];
 			// const data: IModelAPIResponse[] = (await response.json()).data;
 			this._requestLogger.logModelListCall(requestId, requestMetadata, data);
-			for (let model of data) {
-				model = await this._hydrateResolvedModel(model);
+
+			for (const rawModel of data) {
+				const model = await this._hydrateResolvedModel(rawModel);
 				const isCompletionModel = isCompletionModelInformation(model);
 				// The base model is whatever model is deemed "fallback" by the server
 				if (model.is_chat_fallback && !isCompletionModel) {

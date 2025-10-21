@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RequestType } from '@vscode/copilot-api';
-import type { ChatRequest } from 'vscode';
+import { ChatRequest, workspace } from 'vscode';
 import { createServiceIdentifier } from '../../../util/common/services';
 import { TaskSingler } from '../../../util/common/taskSingler';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
@@ -67,6 +67,11 @@ export class AutomodeService extends Disposable implements IAutomodeService {
 
 		let data: AutoModeAPIResponse;
 		try {
+			let config = workspace.getConfiguration('github.copilot').get('forceOffline');
+			if (config) {
+				throw Error('offline');
+			}
+
 			const response = await this._capiClientService.makeRequest<Response>({
 				json: {
 					"auto_mode": { "model_hints": ["auto"] },
@@ -91,10 +96,7 @@ export class AutomodeService extends Disposable implements IAutomodeService {
 			}
 			`
 			);
-
 		}
-
-		// NOTE - 模型会话
 		const selectedModel = knownEndpoints.find(e => e.model === data.selected_model) || knownEndpoints[0];
 		const autoEndpoint = new AutoChatEndpoint(selectedModel, this._chatMLFetcher, data.session_token, data.discounted_costs?.[selectedModel.model] || 0);
 		this._autoModelCache.set(conversationId, {

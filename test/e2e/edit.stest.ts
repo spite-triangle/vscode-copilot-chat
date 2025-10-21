@@ -23,6 +23,7 @@ ssuite.optional(shouldSkipAgentTests, { title: 'edit', subtitle: 'toolCalling', 
 		scenarioFolderPath: '',
 		getState,
 		tools: {
+			[ToolName.Think]: false
 		},
 	}, {
 		allowParallelToolCalls: true,

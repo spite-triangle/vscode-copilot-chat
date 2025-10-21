@@ -55,7 +55,6 @@ export interface BYOKModelCapabilities {
 	vision: boolean;
 	thinking?: boolean;
 	editTools?: EndpointEditToolName[];
-	requestHeaders?: Record<string, string>;
 }
 
 export interface BYOKModelRegistry {
@@ -69,16 +68,9 @@ export interface BYOKModelRegistry {
 export interface BYOKModelProvider<T extends LanguageModelChatInformation> extends LanguageModelChatProvider<T> {
 	readonly authType: BYOKAuthType;
 	/**
-	 * Called when the user is requesting an API key update via UI. The provider should handle all the UI and updating the storage
+	 * Called when the user is requesting an API key update. The provider should handle all the UI and updating the storage
 	 */
 	updateAPIKey(): Promise<void>;
-	/**
-	 * Called when the user is requesting an API key update via VS Code Command. The provider should handle loading from environment variable and updating the storage
-	 * @param envVarName - Name of the environment variable containing the API key
-	 * @param action - Action to perform: 'update' or 'remove'
-	 * @param modelId - Model ID (required for PerModelDeployment auth type)
-	 */
-	updateAPIKeyViaCmd?(envVarName: string, action: 'update' | 'remove', modelId?: string): Promise<void>;
 }
 
 // Many model providers don't have robust model lists. This allows us to map id -> information about models, and then if we don't know the model just let the user enter a custom id
@@ -125,7 +117,7 @@ export function resolveModelInfo(modelId: string, providerName: string, knownMod
 	}
 	const modelName = knownModelInfo?.name || modelId;
 	const contextWinow = knownModelInfo ? (knownModelInfo.maxInputTokens + knownModelInfo.maxOutputTokens) : 128000;
-	const modelInfo: IChatModelInformation = {
+	return {
 		id: modelId,
 		name: modelName,
 		version: '1.0.0',
@@ -149,10 +141,6 @@ export function resolveModelInfo(modelId: string, providerName: string, knownMod
 		is_chat_fallback: false,
 		model_picker_enabled: true
 	};
-	if (knownModelInfo?.requestHeaders && Object.keys(knownModelInfo.requestHeaders).length > 0) {
-		modelInfo.requestHeaders = { ...knownModelInfo.requestHeaders };
-	}
-	return modelInfo;
 }
 
 export function byokKnownModelsToAPIInfo(providerName: string, knownModels: BYOKKnownModels | undefined): LanguageModelChatInformation[] {

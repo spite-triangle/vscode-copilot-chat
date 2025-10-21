@@ -66,24 +66,6 @@ export class AnthropicLMProvider implements BYOKModelProvider<LanguageModelChatI
 		}
 	}
 
-	async updateAPIKeyViaCmd(envVarName: string, action: 'update' | 'remove' = 'update', modelId?: string): Promise<void> {
-		if (action === 'remove') {
-			this._apiKey = undefined;
-			await this._byokStorageService.deleteAPIKey(AnthropicLMProvider.providerName, this.authType, modelId);
-			this._logService.info(`BYOK: API key removed for provider ${AnthropicLMProvider.providerName}`);
-			return;
-		}
-
-		const apiKey = process.env[envVarName];
-		if (!apiKey) {
-			throw new Error(`BYOK: Environment variable ${envVarName} not found or empty for API key management`);
-		}
-
-		this._apiKey = apiKey;
-		await this._byokStorageService.storeAPIKey(AnthropicLMProvider.providerName, apiKey, this.authType, modelId);
-		this._logService.info(`BYOK: API key updated for provider ${AnthropicLMProvider.providerName} from environment variable ${envVarName}`);
-	}
-
 	async provideLanguageModelChatInformation(options: { silent: boolean }, token: CancellationToken): Promise<LanguageModelChatInformation[]> {
 		if (!this._apiKey) { // If we don't have the API key it might just be in storage, so we try to read it first
 			this._apiKey = await this._byokStorageService.getAPIKey(AnthropicLMProvider.providerName);
@@ -235,6 +217,7 @@ export class AnthropicLMProvider implements BYOKModelProvider<LanguageModelChatI
 		let usage: APIUsage | undefined;
 
 		let hasText = false;
+		let firstTool = true;
 		for await (const chunk of stream) {
 			if (token.isCancellationRequested) {
 				break;
@@ -247,11 +230,16 @@ export class AnthropicLMProvider implements BYOKModelProvider<LanguageModelChatI
 
 			if (chunk.type === 'content_block_start') {
 				if ('content_block' in chunk && chunk.content_block.type === 'tool_use') {
+					if (hasText && firstTool) {
+						// Flush the linkifier stream otherwise it pauses before the tool call if the last word ends with a punctuation mark.
+						progress.report(new LanguageModelTextPart(' '));
+					}
 					pendingToolCall = {
 						toolId: chunk.content_block.id,
 						name: chunk.content_block.name,
 						jsonInput: ''
 					};
+					firstTool = false;
 				}
 				continue;
 			}

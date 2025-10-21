@@ -45,9 +45,7 @@ import { UserPreferences } from '../panel/preferences';
 import { ChatToolCalls } from '../panel/toolCalling';
 import { MultirootWorkspaceStructure } from '../panel/workspace/workspaceStructure';
 import { AgentConversationHistory } from './agentConversationHistory';
-import './allAgentPrompts';
-import { AlternateGPTPrompt, DefaultAgentPrompt } from './defaultAgentInstructions';
-import { PromptRegistry } from './promptRegistry';
+import { AlternateGPTPrompt, ClaudeSonnet45PromptV2, CodexStyleGPT5CodexPrompt, CodexStyleGPTPrompt, DefaultAgentPrompt, DefaultAgentPromptV2, SweBenchAgentPrompt } from './agentInstructions';
 import { SummarizedConversationHistory } from './summarizedConversationHistory';
 
 export interface AgentPromptProps extends GenericBasePromptElementProps {
@@ -142,7 +140,87 @@ export class AgentPrompt extends PromptElement<AgentPromptProps> {
 	}
 
 	private getInstructions() {
-		const modelFamily = this.props.endpoint.family ?? 'unknown';
+		if (this.configurationService.getConfig(ConfigKey.Internal.SweBenchAgentPrompt)) {
+			return <SweBenchAgentPrompt availableTools={this.props.promptContext.tools?.availableTools} modelFamily={this.props.endpoint.family} codesearchMode={undefined} />;
+		}
+
+		if (this.props.endpoint.family === 'gpt-5-codex') {
+			const promptType = this.configurationService.getExperimentBasedConfig(ConfigKey.Gpt5CodexAlternatePrompt, this.experimentationService);
+			switch (promptType) {
+				case 'codex':
+					return <CodexStyleGPT5CodexPrompt
+						availableTools={this.props.promptContext.tools?.availableTools}
+						modelFamily={this.props.endpoint.family}
+						codesearchMode={this.props.codesearchMode}
+					/>;
+				default:
+					return <DefaultAgentPrompt
+						availableTools={this.props.promptContext.tools?.availableTools}
+						modelFamily={this.props.endpoint.family}
+						codesearchMode={this.props.codesearchMode}
+					/>;
+			}
+		}
+
+		if (this.props.endpoint.family.startsWith('gpt-5')) {
+			const promptType = this.configurationService.getExperimentBasedConfig(ConfigKey.Gpt5AlternatePrompt, this.experimentationService);
+			switch (promptType) {
+				case 'codex':
+					return <CodexStyleGPTPrompt
+						availableTools={this.props.promptContext.tools?.availableTools}
+						modelFamily={this.props.endpoint.family}
+						codesearchMode={this.props.codesearchMode}
+					/>;
+				case 'v2':
+					return <DefaultAgentPromptV2
+						availableTools={this.props.promptContext.tools?.availableTools}
+						modelFamily={this.props.endpoint.family}
+						codesearchMode={this.props.codesearchMode}
+					/>;
+				default:
+					return <DefaultAgentPrompt
+						availableTools={this.props.promptContext.tools?.availableTools}
+						modelFamily={this.props.endpoint.family}
+						codesearchMode={this.props.codesearchMode}
+					/>;
+			}
+		}
+
+		if (this.props.endpoint.family.startsWith('grok-code')) {
+			const promptType = this.configurationService.getExperimentBasedConfig(ConfigKey.GrokCodeAlternatePrompt, this.experimentationService);
+			switch (promptType) {
+				case 'v2':
+					return <DefaultAgentPromptV2
+						availableTools={this.props.promptContext.tools?.availableTools}
+						modelFamily={this.props.endpoint.family}
+						codesearchMode={this.props.codesearchMode}
+					/>;
+				default:
+					return <DefaultAgentPrompt
+						availableTools={this.props.promptContext.tools?.availableTools}
+						modelFamily={this.props.endpoint.family}
+						codesearchMode={this.props.codesearchMode}
+					/>;
+			}
+		}
+
+		if (this.supportsClaudeAltPrompt(this.props.endpoint.family)) {
+			const promptType = this.configurationService.getExperimentBasedConfig(ConfigKey.ClaudeSonnet45AlternatePrompt, this.experimentationService);
+			switch (promptType) {
+				case 'v2':
+					return <ClaudeSonnet45PromptV2
+						availableTools={this.props.promptContext.tools?.availableTools}
+						modelFamily={this.props.endpoint.family}
+						codesearchMode={this.props.codesearchMode}
+					/>;
+				default:
+					return <DefaultAgentPrompt
+						availableTools={this.props.promptContext.tools?.availableTools}
+						modelFamily={this.props.endpoint.family}
+						codesearchMode={this.props.codesearchMode}
+					/>;
+			}
+		}
 
 		if (this.props.endpoint.family.startsWith('gpt-') && this.configurationService.getExperimentBasedConfig(ConfigKey.EnableAlternateGptPrompt, this.experimentationService)) {
 			return <AlternateGPTPrompt
@@ -152,25 +230,20 @@ export class AgentPrompt extends PromptElement<AgentPromptProps> {
 			/>;
 		}
 
-		const agentPromptResolver = PromptRegistry.getPrompt(modelFamily);
-		if (agentPromptResolver) {
-			const resolver = this.instantiationService.createInstance(agentPromptResolver);
-			const PromptClass = resolver.resolvePrompt();
-
-			if (PromptClass) {
-				return <PromptClass
-					availableTools={this.props.promptContext.tools?.availableTools}
-					modelFamily={modelFamily}
-					codesearchMode={this.props.codesearchMode}
-				/>;
-			}
-		}
-
 		return <DefaultAgentPrompt
 			availableTools={this.props.promptContext.tools?.availableTools}
-			modelFamily={modelFamily}
+			modelFamily={this.props.endpoint.family}
 			codesearchMode={this.props.codesearchMode}
 		/>;
+	}
+
+	private supportsClaudeAltPrompt(family: string): boolean {
+		if (!family.startsWith('claude-')) {
+			return false;
+		}
+
+		const excludedVersions = ['claude-3.5-sonnet', 'claude-3.7-sonnet', 'claude-sonnet-4'];
+		return !excludedVersions.includes(family);
 	}
 
 	private async getAgentCustomInstructions() {
@@ -782,7 +855,7 @@ function getExplanationReminder(modelFamily: string | undefined, hasTodoTool?: b
 			<Tag name='importantReminders'>
 				Before starting a task, review and follow the guidance in &lt;responseModeHints&gt;, &lt;engineeringMindsetHints&gt;, and &lt;requirementsUnderstanding&gt;.<br />
 				{!isGpt5Mini && <>Start your response with a brief acknowledgement, followed by a concise high-level plan outlining your approach.<br /></>}
-				Do NOT volunteer your model name unless the user explicitly asks you about it. <br />
+				DO NOT state your identity or model name unless the user explicitly asks you to. <br />
 				{hasTodoTool && <>You MUST use the todo list tool to plan and track your progress. NEVER skip this step, and START with this step whenever the task is multi-step. This is essential for maintaining visibility and proper execution of large tasks.<br /></>}
 				{!hasTodoTool && <>Break down the request into clear, actionable steps and present them at the beginning of your response before proceeding with implementation. This helps maintain visibility and ensures all requirements are addressed systematically.<br /></>}
 				When referring to a filename or symbol in the user's workspace, wrap it in backticks.<br />

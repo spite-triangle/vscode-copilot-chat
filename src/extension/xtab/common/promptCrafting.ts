@@ -16,34 +16,39 @@ import { illegalArgument } from '../../../util/vs/base/common/errors';
 import { Schemas } from '../../../util/vs/base/common/network';
 import { OffsetRange } from '../../../util/vs/editor/common/core/ranges/offsetRange';
 import { StringText } from '../../../util/vs/editor/common/core/text/abstractText';
-import { CurrentDocument } from './xtabCurrentDocument';
 
 export namespace PromptTags {
 	export const CURSOR = "<|cursor|>";
 
-	type Tag = {
-		start: string;
-		end: string;
+	export const EDIT_WINDOW = {
+		start: "<|code_to_edit|>",
+		end: "<|/code_to_edit|>"
 	};
 
-	function createTag(key: string): Tag {
-		return {
-			start: `<|${key}|>`,
-			end: `<|/${key}|>`
-		};
-	}
+	export const AREA_AROUND = {
+		start: "<|area_around_code_to_edit|>",
+		end: "<|/area_around_code_to_edit|>"
+	};
 
-	export const EDIT_WINDOW = createTag("code_to_edit");
+	export const CURRENT_FILE = {
+		start: "<|current_file_content|>",
+		end: "<|/current_file_content|>"
+	};
 
-	export const AREA_AROUND = createTag("area_around_code_to_edit");
+	export const EDIT_HISTORY = {
+		start: "<|edit_diff_history|>",
+		end: "<|/edit_diff_history|>"
+	};
 
-	export const CURRENT_FILE = createTag("current_file_content");
+	export const RECENT_FILES = {
+		start: "<|recently_viewed_code_snippets|>",
+		end: "<|/recently_viewed_code_snippets|>"
+	};
 
-	export const EDIT_HISTORY = createTag("edit_diff_history");
-
-	export const RECENT_FILES = createTag("recently_viewed_code_snippets");
-
-	export const RECENT_FILE = createTag("recently_viewed_code_snippet");
+	export const RECENT_FILE = {
+		start: "<|recently_viewed_code_snippet|>",
+		end: "<|/recently_viewed_code_snippet|>"
+	};
 }
 
 export const systemPromptTemplate = `Your role as an AI assistant is to help developers complete their code tasks by assisting in editing specific sections of code marked by the ${PromptTags.EDIT_WINDOW.start} and ${PromptTags.EDIT_WINDOW.end} tags, while adhering to Microsoft's content policies and avoiding the creation of content that violates copyrights.
@@ -148,9 +153,6 @@ export const xtab275SystemPrompt = `Predict the next code edit based on user con
 
 export class PromptPieces {
 	constructor(
-		public readonly currentDocument: CurrentDocument,
-		public readonly editWindowLinesRange: OffsetRange,
-		public readonly areaAroundEditWindowLinesRange: OffsetRange,
 		public readonly activeDoc: StatelessNextEditDocument,
 		public readonly xtabHistory: readonly IXtabHistoryEntry[],
 		public readonly currentFileContent: string,
@@ -176,7 +178,7 @@ export function getUserPrompt(promptPieces: PromptPieces): string {
 
 	const currentFilePath = toUniquePath(activeDoc.id, activeDoc.workspaceRoot?.path);
 
-	const postScript = promptPieces.opts.includePostScript ? getPostScript(opts.promptingStrategy, currentFilePath) : '';
+	const postScript = getPostScript(opts.promptingStrategy, currentFilePath);
 
 	const mainPrompt = `${PromptTags.RECENT_FILES.start}
 ${recentlyViewedCodeSnippets}
@@ -669,35 +671,9 @@ function expandRangeToPageRange(
 	return { firstPageIdx, lastPageIdx, budgetLeft: tokenBudget };
 }
 
-export function clipPreservingRange(
-	docLines: string[],
-	rangeToPreserve: OffsetRange,
-	computeTokens: (s: string) => number,
-	pageSize: number,
-	opts: CurrentFileOptions,
-): Result<OffsetRange, 'outOfBudget'> {
-
-	// subtract budget consumed by rangeToPreserve
-	const availableTokenBudget = opts.maxTokens - countTokensForLines(docLines.slice(rangeToPreserve.start, rangeToPreserve.endExclusive), computeTokens);
-	if (availableTokenBudget < 0) {
-		return Result.error('outOfBudget');
-	}
-
-	const { firstPageIdx, lastPageIdx } = expandRangeToPageRange(
-		docLines,
-		rangeToPreserve,
-		pageSize,
-		availableTokenBudget,
-		computeTokens,
-		opts.prioritizeAboveCursor,
-	);
-
-	const linesOffsetStart = firstPageIdx * pageSize;
-	const linesOffsetEndExcl = lastPageIdx * pageSize + pageSize;
-
-	return Result.ok(new OffsetRange(linesOffsetStart, linesOffsetEndExcl));
-}
-
+/**
+ * @remark exported for testing
+ */
 export function createTaggedCurrentFileContentUsingPagedClipping(
 	currentDocLines: string[],
 	areaAroundCodeToEdit: string,
@@ -707,24 +683,28 @@ export function createTaggedCurrentFileContentUsingPagedClipping(
 	opts: CurrentFileOptions
 ): Result<{ taggedCurrentFileContent: string; nLines: number }, 'outOfBudget'> {
 
-	const r = clipPreservingRange(
-		currentDocLines,
-		areaAroundEditWindowLinesRange,
-		computeTokens,
-		pageSize,
-		opts
-	);
-
-	if (r.isError()) {
+	// subtract budget consumed by areaAroundCodeToEdit
+	const availableTokenBudget = opts.maxTokens - countTokensForLines(areaAroundCodeToEdit.split(/\r?\n/), computeTokens);
+	if (availableTokenBudget < 0) {
 		return Result.error('outOfBudget');
 	}
 
-	const clippedRange = r.val;
+	const { firstPageIdx, lastPageIdx } = expandRangeToPageRange(
+		currentDocLines,
+		areaAroundEditWindowLinesRange,
+		pageSize,
+		availableTokenBudget,
+		computeTokens,
+		opts.prioritizeAboveCursor,
+	);
+
+	const linesOffsetStart = firstPageIdx * pageSize;
+	const linesOffsetEnd = lastPageIdx * pageSize + pageSize;
 
 	const taggedCurrentFileContent = [
-		...currentDocLines.slice(clippedRange.start, areaAroundEditWindowLinesRange.start),
+		...currentDocLines.slice(linesOffsetStart, areaAroundEditWindowLinesRange.start),
 		areaAroundCodeToEdit,
-		...currentDocLines.slice(areaAroundEditWindowLinesRange.endExclusive, clippedRange.endExclusive),
+		...currentDocLines.slice(areaAroundEditWindowLinesRange.endExclusive, linesOffsetEnd),
 	];
 
 	return Result.ok({ taggedCurrentFileContent: taggedCurrentFileContent.join('\n'), nLines: taggedCurrentFileContent.length });

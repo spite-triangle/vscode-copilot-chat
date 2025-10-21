@@ -4,8 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ClientHttp2Stream } from 'http2';
-import { Readable } from 'stream';
-import { type CancellationToken } from 'vscode';
+import type { CancellationToken } from 'vscode';
 import { createRequestHMAC } from '../../../util/common/crypto';
 import { generateUuid } from '../../../util/vs/base/common/uuid';
 import { IInstantiationService, ServicesAccessor } from '../../../util/vs/platform/instantiation/common/instantiation';
@@ -14,6 +13,8 @@ import { IChatQuotaService } from '../../chat/common/chatQuotaService';
 import { ChatLocation } from '../../chat/common/commonTypes';
 import { IInteractionService } from '../../chat/common/interactionService';
 import { ICAPIClientService } from '../../endpoint/common/capiClient';
+import { IDomainService } from '../../endpoint/common/domainService';
+import { IEnvService } from '../../env/common/envService';
 import { ILogService } from '../../log/common/logService';
 import { FinishedCallback, OptionalChatRequestParams, RequestId, getProcessingTime, getRequestId } from '../../networking/common/fetch';
 import { FetcherId, IFetcherService, Response } from '../../networking/common/fetcherService';
@@ -23,7 +24,6 @@ import { sendEngineMessagesTelemetry } from '../../networking/node/chatStream';
 import { sendCommunicationErrorTelemetry } from '../../networking/node/stream';
 import { ITelemetryService, TelemetryProperties } from '../../telemetry/common/telemetry';
 import { TelemetryData } from '../../telemetry/common/telemetryData';
-
 
 /** based on https://platform.openai.com/docs/api-reference/chat/create */
 interface RequiredChatRequestParams {
@@ -113,8 +113,13 @@ export async function fetchAndStreamChat(
 ): Promise<ChatResults | ChatRequestFailed | ChatRequestCanceled> {
 	const logService = accessor.get(ILogService);
 	const telemetryService = accessor.get(ITelemetryService);
+	const fetcherService = accessor.get(IFetcherService);
+	const envService = accessor.get(IEnvService);
 	const chatQuotaService = accessor.get(IChatQuotaService);
+	const domainService = accessor.get(IDomainService);
+	const capiClientService = accessor.get(ICAPIClientService);
 	const authenticationService = accessor.get(IAuthenticationService);
+	const interactionService = accessor.get(IInteractionService);
 	const instantiationService = accessor.get(IInstantiationService);
 	if (cancel?.isCancellationRequested) {
 		return { type: FetchResponseKind.Canceled, reason: 'before fetch request' };
@@ -141,36 +146,24 @@ export async function fetchAndStreamChat(
 	// Generate unique ID to link input and output messages
 	const modelCallId = generateUuid();
 
-	const response1 = await instantiationService.invokeFunction(accessor =>
-		fetchWithInstrumentation(
-			accessor,
-			chatEndpointInfo,
-			ourRequestId,
-			request,
-			secretKey,
-			location,
-			userInitiatedRequest,
-			cancel,
-			{ ...telemetryProperties, modelCallId },
-			useFetcher,
-		));
-
-	let data = await response1.text();
-
-	let response2 = new Response(200,
-		"",
-		new Map(),
-		() => {
-			return Promise.resolve('');;
-		},
-		() => {
-			return Promise.resolve({});
-		},
-		() => {
-			return Promise.resolve(Readable.from(data));
-		}
+	const response = await fetchWithInstrumentation(
+		logService,
+		telemetryService,
+		fetcherService,
+		envService,
+		domainService,
+		capiClientService,
+		interactionService,
+		chatEndpointInfo,
+		ourRequestId,
+		request,
+		secretKey,
+		location,
+		userInitiatedRequest,
+		cancel,
+		{ ...telemetryProperties, modelCallId },
+		useFetcher,
 	);
-	const response = response2;
 
 	if (cancel?.isCancellationRequested) {
 		const body = await response!.body();
@@ -197,7 +190,6 @@ export async function fetchAndStreamChat(
 
 	// Extend baseTelemetryData with modelCallId for output messages
 	const extendedBaseTelemetryData = baseTelemetryData.extendedBy({ modelCallId });
-
 
 	const chatCompletions = await chatEndpointInfo.processResponseFromChatEndpoint(
 		telemetryService,
@@ -344,20 +336,11 @@ async function handleError(
 		}
 
 		if (response.status === 404) {
-			let errorReason: string;
-
-			// Check if response body is valid JSON
-			if (!jsonData) {
-				errorReason = text;
-			} else {
-				errorReason = JSON.stringify(jsonData);
-			}
-
 			return {
 				type: FetchResponseKind.Failed,
 				modelRequestId: modelRequestIdObj,
 				failKind: ChatFailKind.NotFound,
-				reason: errorReason
+				reason: 'Resource not found'
 			};
 		}
 
@@ -471,7 +454,13 @@ async function handleError(
 }
 
 async function fetchWithInstrumentation(
-	accessor: ServicesAccessor,
+	logService: ILogService,
+	telemetryService: ITelemetryService,
+	fetcherService: IFetcherService,
+	envService: IEnvService,
+	domainService: IDomainService,
+	capiClientService: ICAPIClientService,
+	interactionService: IInteractionService,
 	chatEndpoint: IChatEndpoint,
 	ourRequestId: string,
 	request: IEndpointBody,
@@ -482,11 +471,6 @@ async function fetchWithInstrumentation(
 	telemetryProperties?: TelemetryProperties,
 	useFetcher?: FetcherId,
 ): Promise<Response> {
-	const logService = accessor.get(ILogService);
-	const telemetryService = accessor.get(ITelemetryService);
-	const fetcherService = accessor.get(IFetcherService);
-	const capiClientService = accessor.get(ICAPIClientService);
-	const interactionService = accessor.get(IInteractionService);
 
 	// If request contains an image, we include this header.
 	const additionalHeaders: Record<string, string> = {
@@ -506,7 +490,7 @@ async function fetchWithInstrumentation(
 	});
 
 	for (const [key, value] of Object.entries(request)) {
-		if (key === 'messages' || key === 'input') {
+		if (key === 'messages') {
 			continue;
 		} // Skip messages (PII)
 		telemetryData.properties[`request.option.${key}`] = JSON.stringify(value) ?? 'undefined';
@@ -521,7 +505,6 @@ async function fetchWithInstrumentation(
 
 	const requestStart = Date.now();
 	const intent = locationToIntent(location);
-
 
 	// Wrap the Promise with success/error callbacks so we can log/measure it
 	return postRequest(
@@ -556,6 +539,12 @@ async function fetchWithInstrumentation(
 		telemetryData.measurements.totalTimeMs = totalTimeMs;
 
 		logService.debug(`request.response: [${stringifyUrlOrRequestMetadata(chatEndpoint.urlOrRequestMetadata)}], took ${totalTimeMs} ms`);
+
+		if (request.messages) {
+			logService.debug(`messages: ${JSON.stringify(request.messages)}`);
+		} else if (request.input) {
+			logService.debug(`input: ${JSON.stringify(request.input)}`);
+		}
 
 		telemetryService.sendGHTelemetryEvent('request.response', telemetryData.properties, telemetryData.measurements);
 

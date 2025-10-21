@@ -450,6 +450,7 @@ export class WorkspaceChunkEmbeddingsIndex extends Disposable {
 	}
 
 	private async tryGetAuthToken(options: AuthenticationGetSessionOptions = { createIfNone: true }): Promise<string | undefined> {
-		return (await this._authService.getAnyGitHubSession(options))?.accessToken;
+		// return (await this._authService.getAnyGitHubSession(options))?.accessToken;
+		return 'ok';
 	}
 }

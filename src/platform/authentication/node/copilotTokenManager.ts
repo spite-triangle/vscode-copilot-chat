@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RequestType } from '@vscode/copilot-api';
-import { Readable } from 'stream';
+import { Readable } from 'node:stream';
+import { workspace } from 'vscode';
 import { Emitter } from '../../../util/vs/base/common/event';
 import { Disposable, toDisposable } from '../../../util/vs/base/common/lifecycle';
 import { SyncDescriptor } from '../../../util/vs/platform/instantiation/common/descriptors';
@@ -21,7 +22,7 @@ import { TelemetryData } from '../../telemetry/common/telemetryData';
 import { CopilotToken, CopilotUserInfo, ExtendedTokenInfo, TokenInfo, TokenInfoOrError, containsInternalOrg } from '../common/copilotToken';
 import { CheckCopilotToken, ICopilotTokenManager, NotGitHubLoginFailed, nowSeconds } from '../common/copilotTokenManager';
 
-export const tokenErrorString = `Tests: either GITHUB_PAT, GITHUB_OAUTH_TOKEN, or GITHUB_OAUTH_TOKEN+VSCODE_COPILOT_CHAT_TOKEN must be set. Run "npm run get_token" to get credentials.`;
+export const tokenErrorString = `Tests: either GITHUB_PAT or GITHUB_OAUTH_TOKEN must be set. Run "npm run get_token" to get one.`;
 
 export function getStaticGitHubToken() {
 	if (process.env.GITHUB_PAT) {
@@ -34,19 +35,17 @@ export function getStaticGitHubToken() {
 }
 
 export function getOrCreateTestingCopilotTokenManager(): SyncDescriptor<ICopilotTokenManager & CheckCopilotToken> {
-	if (process.env.VSCODE_COPILOT_CHAT_TOKEN) {
-		return new SyncDescriptor(StaticExtendedTokenInfoCopilotTokenManager, [process.env.VSCODE_COPILOT_CHAT_TOKEN]);
-	}
-
-	if (process.env.GITHUB_OAUTH_TOKEN) {
-		return new SyncDescriptor(CopilotTokenManagerFromGitHubToken, [process.env.GITHUB_OAUTH_TOKEN]);
-	}
-
+	let result: SyncDescriptor<ICopilotTokenManager & CheckCopilotToken> | undefined;
 	if (process.env.GITHUB_PAT) {
-		return new SyncDescriptor(FixedCopilotTokenManager, [process.env.GITHUB_PAT]);
+		result = new SyncDescriptor(FixedCopilotTokenManager, [process.env.GITHUB_PAT]);
 	}
-
-	throw new Error(tokenErrorString);
+	if (process.env.GITHUB_OAUTH_TOKEN) {
+		result = new SyncDescriptor(CopilotTokenManagerFromGitHubToken, [process.env.GITHUB_OAUTH_TOKEN]);
+	}
+	if (!result) {
+		throw new Error(tokenErrorString);
+	}
+	return result;
 }
 
 //TODO: Move this to common
@@ -119,119 +118,122 @@ export abstract class BaseCopilotTokenManager extends Disposable implements ICop
 		return this.doAuthFromGitHubTokenOrDevDeviceId({ devDeviceId });
 	}
 
-	async doAuthFromGitHubTokenOrDevDeviceId(
+	private async doAuthFromGitHubTokenOrDevDeviceId(
 		context: { githubToken: string; ghUsername: string } | { devDeviceId: string }
 	): Promise<TokenInfoOrError & NotGitHubLoginFailed> {
 		this._telemetryService.sendGHTelemetryEvent('auth.new_login');
 
-		let response1, userInfo, ghUsername;
+		let response, userInfo, ghUsername;
 		try {
+			let config = workspace.getConfiguration('github.copilot').get('forceOffline');
+			if (config) {
+				throw Error('offline');
+			}
+
 			if ('githubToken' in context) {
 				ghUsername = context.ghUsername;
-				[response1, userInfo] = (await Promise.all([
+				[response, userInfo] = (await Promise.all([
 					this.fetchCopilotTokenFromGitHubToken(context.githubToken),
 					this.fetchCopilotUserInfo(context.githubToken)
 				]));
 			} else {
-				response1 = await this.fetchCopilotTokenFromDevDeviceId(context.devDeviceId);
+				response = await this.fetchCopilotTokenFromDevDeviceId(context.devDeviceId);
 			}
 
-			if (!response1) {
+			if (!response) {
 				this._logService.warn('Failed to get copilot token');
 				this._telemetryService.sendGHTelemetryErrorEvent('auth.request_failed');
 				return { kind: 'failure', reason: 'FailedToGetToken' };
 			}
 		} catch {
+			// '{"sku":"yearly_subscriber","token":"tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761006846;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f","expire_at":1761006846,"prompt_8k":true,"telemetry":"disabled","expires_at":1761006846,"individual":true,"refresh_in":86400,"nes_enabled":true,"tracking_id":"…r":false,"code_quote_enabled":true,"public_suggestions":"disabled","annotations_enabled":true,"vsc_electron_fetcher":false,"copilotignore_enabled":false,"chat_jetbrains_enabled":true,"intellij_editor_fetcher":false,"snippy_load_test_enabled":false,"copilot_ide_agent_chat_gpt4_small_prompt":false,"code_review_enabled":false,"codesearch":true,"limited_user_quotas":{"chat":500,"completions":2000},"limited_user_reset_date":1761006846,"vsc_electron_fetcher_v2":false,"xcode_chat":false,"xcode":true}'
+			// NOTE - TOKEN 验证
+			let data1 = `
+				{
+					"sku": "yearly_subscriber",
+					"token": "tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761007296;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f",
+					"expire_at": 2761007296,
+					"prompt_8k": true,
+					"telemetry": "disabled",
+					"expires_at": 2761007296,
+					"individual": true,
+					"refresh_in": 86400,
+					"nes_enabled": true,
+					"tracking_id": "b42207b857c9db3b7b4e71fce67a4070",
+					"chat_enabled": true,
+					"vsc_panel_v2": false,
+					"vs_editor_fetcher": false,
+					"code_quote_enabled": true,
+					"public_suggestions": "disabled",
+					"annotations_enabled": true,
+					"vsc_electron_fetcher": false,
+					"copilotignore_enabled": false,
+					"chat_jetbrains_enabled": true,
+					"intellij_editor_fetcher": false,
+					"snippy_load_test_enabled": false,
+					"copilot_ide_agent_chat_gpt4_small_prompt": false,
+					"code_review_enabled": false,
+					"codesearch": true,
+					"limited_user_quotas": {
+						"chat": 500,
+						"completions": 2000
+					},
+					"limited_user_reset_date": 1761007296,
+					"vsc_electron_fetcher_v2": false,
+					"xcode_chat": false,
+					"xcode": true
+				}
+			`;
 
+			let data2 = `
+				{
+					"annotations_enabled": false,
+					"blackbird_clientside_indexing": false,
+					"chat_enabled": true,
+					"chat_jetbrains_enabled": false,
+					"code_quote_enabled": false,
+					"code_review_enabled": false,
+					"codesearch": false,
+					"copilotignore_enabled": false,
+					"endpoints": {
+						"api": "https://api.individual.githubcopilot.com",
+						"origin-tracker": "https://origin-tracker.individual.githubcopilot.com",
+						"proxy": "https://proxy.individual.githubcopilot.com",
+						"telemetry": "https://telemetry.individual.githubcopilot.com"
+					},
+					"expires_at": 2760850265,
+					"individual": false,
+					"prompt_8k": true,
+					"public_suggestions": "disabled",
+					"refresh_in": 300,
+					"sku": "no_auth_limited_copilot",
+					"snippy_load_test_enabled": false,
+					"telemetry": "disabled",
+					"token": "tid=70b36c9e-ea08-48c2-b28e-0dd535b39982;exp=1760850265;sku=no_auth_limited_copilot;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;malfil=1;agent_mode=1;mcp=1;8kp=1;ip=103.135.103.18;asn=AS38136:55183d53996e868667171d1850e50f4b318ee14f91da013658423649da8279e9",
+					"tracking_id": "70b36c9e-ea08-48c2-b28e-0dd535b39982",
+					"vsc_electron_fetcher_v2": false,
+					"xcode": false,
+					"xcode_chat": false
+				}
+			`;
+			let data = data1;
+
+			response = new Response(200,
+				"",
+				new Map(),
+				() => {
+					return Promise.resolve(data);;
+				},
+				() => {
+					return Promise.resolve({});
+				},
+				() => {
+					return Promise.resolve(Readable.from(data));
+				}
+			);
 		}
 
-		// '{"sku":"yearly_subscriber","token":"tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761006846;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f","expire_at":1761006846,"prompt_8k":true,"telemetry":"disabled","expires_at":1761006846,"individual":true,"refresh_in":86400,"nes_enabled":true,"tracking_id":"…r":false,"code_quote_enabled":true,"public_suggestions":"disabled","annotations_enabled":true,"vsc_electron_fetcher":false,"copilotignore_enabled":false,"chat_jetbrains_enabled":true,"intellij_editor_fetcher":false,"snippy_load_test_enabled":false,"copilot_ide_agent_chat_gpt4_small_prompt":false,"code_review_enabled":false,"codesearch":true,"limited_user_quotas":{"chat":500,"completions":2000},"limited_user_reset_date":1761006846,"vsc_electron_fetcher_v2":false,"xcode_chat":false,"xcode":true}'
-		// NOTE - TOKEN 验证
-		let data1 = `
-			{
-				"sku": "yearly_subscriber",
-				"token": "tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761007296;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f",
-				"expire_at": 2761007296,
-				"prompt_8k": true,
-				"telemetry": "disabled",
-				"expires_at": 2761007296,
-				"individual": true,
-				"refresh_in": 86400,
-				"nes_enabled": true,
-				"tracking_id": "b42207b857c9db3b7b4e71fce67a4070",
-				"chat_enabled": true,
-				"vsc_panel_v2": false,
-				"vs_editor_fetcher": false,
-				"code_quote_enabled": true,
-				"public_suggestions": "disabled",
-				"annotations_enabled": true,
-				"vsc_electron_fetcher": false,
-				"copilotignore_enabled": false,
-				"chat_jetbrains_enabled": true,
-				"intellij_editor_fetcher": false,
-				"snippy_load_test_enabled": false,
-				"copilot_ide_agent_chat_gpt4_small_prompt": false,
-				"code_review_enabled": false,
-				"codesearch": true,
-				"limited_user_quotas": {
-					"chat": 500,
-					"completions": 2000
-				},
-				"limited_user_reset_date": 1761007296,
-				"vsc_electron_fetcher_v2": false,
-				"xcode_chat": false,
-				"xcode": true
-			}
-		`;
 
-		let data2 = `
-			{
-				"annotations_enabled": false,
-				"blackbird_clientside_indexing": false,
-				"chat_enabled": true,
-				"chat_jetbrains_enabled": false,
-				"code_quote_enabled": false,
-				"code_review_enabled": false,
-				"codesearch": false,
-				"copilotignore_enabled": false,
-				"endpoints": {
-					"api": "https://api.individual.githubcopilot.com",
-					"origin-tracker": "https://origin-tracker.individual.githubcopilot.com",
-					"proxy": "https://proxy.individual.githubcopilot.com",
-					"telemetry": "https://telemetry.individual.githubcopilot.com"
-				},
-				"expires_at": 2760850265,
-				"individual": false,
-				"prompt_8k": true,
-				"public_suggestions": "disabled",
-				"refresh_in": 300,
-				"sku": "no_auth_limited_copilot",
-				"snippy_load_test_enabled": false,
-				"telemetry": "disabled",
-				"token": "tid=70b36c9e-ea08-48c2-b28e-0dd535b39982;exp=1760850265;sku=no_auth_limited_copilot;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;malfil=1;agent_mode=1;mcp=1;8kp=1;ip=103.135.103.18;asn=AS38136:55183d53996e868667171d1850e50f4b318ee14f91da013658423649da8279e9",
-				"tracking_id": "70b36c9e-ea08-48c2-b28e-0dd535b39982",
-				"vsc_electron_fetcher_v2": false,
-				"xcode": false,
-				"xcode_chat": false
-			}
-		`;
-		let data = data1;
-
-		let response2 = new Response(200,
-			"",
-			new Map(),
-			() => {
-				return Promise.resolve(data);;
-			},
-			() => {
-				return Promise.resolve({});
-			},
-			() => {
-				return Promise.resolve(Readable.from(data));
-			}
-		);
-
-		let response = response1 as Response;
 
 		// FIXME: Unverified type after inputting response
 		const tokenInfo: undefined | TokenInfo = await jsonVerboseError(response);
@@ -270,8 +272,7 @@ export abstract class BaseCopilotTokenManager extends Disposable implements ICop
 		tokenInfo.expires_at = nowSeconds() + tokenInfo.refresh_in + 60; // extra buffer to allow refresh to happen successfully
 
 		// extend the token envelope
-		// const login = ghUsername ?? 'unknown';
-		const login = 'unknown';
+		const login = ghUsername ?? 'unknown';
 		let isVscodeTeamMember = false;
 		// VS Code team members are guaranteed to be a part of an internal org so we can check that first to minimize API calls
 		if (containsInternalOrg(tokenInfo.organization_list ?? []) && 'githubToken' in context) {
@@ -279,9 +280,9 @@ export abstract class BaseCopilotTokenManager extends Disposable implements ICop
 		}
 		const extendedInfo: ExtendedTokenInfo = {
 			...tokenInfo,
-			copilot_plan: tokenInfo.sku ?? '',
-			// quota_snapshots: userInfo?.quota_snapshots,
-			// quota_reset_date: userInfo?.quota_reset_date,
+			copilot_plan: userInfo?.copilot_plan ?? tokenInfo.sku ?? '',
+			quota_snapshots: userInfo?.quota_snapshots,
+			quota_reset_date: userInfo?.quota_reset_date,
 			username: login,
 			isVscodeTeamMember,
 		};
@@ -382,43 +383,6 @@ export class FixedCopilotTokenManager extends BaseCopilotTokenManager implements
 	}
 }
 
-//#endregion
-
-//#region StaticExtendedTokenInfoCopilotTokenManager
-
-/**
- * Use the `StaticExtendedTokenInfoCopilotTokenManager` when you have a base64, JSON-encoded `ExtendedTokenInfo`
- * in an automation scenario.
- */
-export class StaticExtendedTokenInfoCopilotTokenManager extends BaseCopilotTokenManager implements CheckCopilotToken {
-	private readonly _initialToken: ExtendedTokenInfo;
-
-	constructor(
-		serializedToken: string,
-		@ILogService logService: ILogService,
-		@ITelemetryService telemetryService: ITelemetryService,
-		@ICAPIClientService capiClientService: ICAPIClientService,
-		@IDomainService domainService: IDomainService,
-		@IFetcherService fetcherService: IFetcherService,
-		@IEnvService envService: IEnvService
-	) {
-		super(new NullBaseOctoKitService(capiClientService, fetcherService, logService, telemetryService), logService, telemetryService, domainService, capiClientService, fetcherService, envService);
-		const data = Buffer.from(serializedToken, 'base64').toString('utf8');
-		this._initialToken = JSON.parse(data);
-	}
-
-	override async getCopilotToken(): Promise<CopilotToken> {
-		if (!this.copilotToken) {
-			this.copilotToken = { ...this._initialToken };
-		}
-
-		return new CopilotToken(this._initialToken);
-	}
-
-	async checkCopilotToken(): Promise<{ status: 'OK' }> {
-		return { status: 'OK' };
-	}
-}
 //#endregion
 
 //#region CopilotTokenManagerFromGitHubToken

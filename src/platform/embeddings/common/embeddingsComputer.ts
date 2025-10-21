@@ -89,10 +89,8 @@ export interface EmbeddingDistance {
 
 export const IEmbeddingsComputer = createServiceIdentifier<IEmbeddingsComputer>('IEmbeddingsComputer');
 
-export type EmbeddingInputType = 'document' | 'query';
-
 export type ComputeEmbeddingsOptions = {
-	readonly inputType?: EmbeddingInputType;
+	readonly inputType?: 'document' | 'query';
 };
 
 export interface IEmbeddingsComputer {

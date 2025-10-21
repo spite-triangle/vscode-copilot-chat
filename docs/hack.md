@@ -12,89 +12,125 @@
     ): Promise<TokenInfoOrError & NotGitHubLoginFailed> {
         this._telemetryService.sendGHTelemetryEvent('auth.new_login');
 
-		let response1, userInfo, ghUsername;
+			let response, userInfo, ghUsername;
 		try {
+			let config = workspace.getConfiguration('github.copilot').get('forceOffline');
+			if (config) {
+				throw Error('offline');
+			}
+
 			if ('githubToken' in context) {
 				ghUsername = context.ghUsername;
-				[response1, userInfo] = (await Promise.all([
+				[response, userInfo] = (await Promise.all([
 					this.fetchCopilotTokenFromGitHubToken(context.githubToken),
 					this.fetchCopilotUserInfo(context.githubToken)
 				]));
 			} else {
-				response1 = await this.fetchCopilotTokenFromDevDeviceId(context.devDeviceId);
+				response = await this.fetchCopilotTokenFromDevDeviceId(context.devDeviceId);
 			}
 
-			if (!response1) {
+			if (!response) {
 				this._logService.warn('Failed to get copilot token');
 				this._telemetryService.sendGHTelemetryErrorEvent('auth.request_failed');
 				return { kind: 'failure', reason: 'FailedToGetToken' };
 			}
-			let json = await response1.json();
-			this._logService.debug(`${JSON.stringify(json)}`);
 		} catch {
+			// '{"sku":"yearly_subscriber","token":"tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761006846;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f","expire_at":1761006846,"prompt_8k":true,"telemetry":"disabled","expires_at":1761006846,"individual":true,"refresh_in":86400,"nes_enabled":true,"tracking_id":"…r":false,"code_quote_enabled":true,"public_suggestions":"disabled","annotations_enabled":true,"vsc_electron_fetcher":false,"copilotignore_enabled":false,"chat_jetbrains_enabled":true,"intellij_editor_fetcher":false,"snippy_load_test_enabled":false,"copilot_ide_agent_chat_gpt4_small_prompt":false,"code_review_enabled":false,"codesearch":true,"limited_user_quotas":{"chat":500,"completions":2000},"limited_user_reset_date":1761006846,"vsc_electron_fetcher_v2":false,"xcode_chat":false,"xcode":true}'
+			// NOTE - TOKEN 验证
+			let data1 = `
+				{
+					"sku": "yearly_subscriber",
+					"token": "tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761007296;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f",
+					"expire_at": 2761007296,
+					"prompt_8k": true,
+					"telemetry": "disabled",
+					"expires_at": 2761007296,
+					"individual": true,
+					"refresh_in": 86400,
+					"nes_enabled": true,
+					"tracking_id": "b42207b857c9db3b7b4e71fce67a4070",
+					"chat_enabled": true,
+					"vsc_panel_v2": false,
+					"vs_editor_fetcher": false,
+					"code_quote_enabled": true,
+					"public_suggestions": "disabled",
+					"annotations_enabled": true,
+					"vsc_electron_fetcher": false,
+					"copilotignore_enabled": false,
+					"chat_jetbrains_enabled": true,
+					"intellij_editor_fetcher": false,
+					"snippy_load_test_enabled": false,
+					"copilot_ide_agent_chat_gpt4_small_prompt": false,
+					"code_review_enabled": false,
+					"codesearch": true,
+					"limited_user_quotas": {
+						"chat": 500,
+						"completions": 2000
+					},
+					"limited_user_reset_date": 1761007296,
+					"vsc_electron_fetcher_v2": false,
+					"xcode_chat": false,
+					"xcode": true
+				}
+			`;
 
+			let data2 = `
+				{
+					"annotations_enabled": false,
+					"blackbird_clientside_indexing": false,
+					"chat_enabled": true,
+					"chat_jetbrains_enabled": false,
+					"code_quote_enabled": false,
+					"code_review_enabled": false,
+					"codesearch": false,
+					"copilotignore_enabled": false,
+					"endpoints": {
+						"api": "https://api.individual.githubcopilot.com",
+						"origin-tracker": "https://origin-tracker.individual.githubcopilot.com",
+						"proxy": "https://proxy.individual.githubcopilot.com",
+						"telemetry": "https://telemetry.individual.githubcopilot.com"
+					},
+					"expires_at": 2760850265,
+					"individual": false,
+					"prompt_8k": true,
+					"public_suggestions": "disabled",
+					"refresh_in": 300,
+					"sku": "no_auth_limited_copilot",
+					"snippy_load_test_enabled": false,
+					"telemetry": "disabled",
+					"token": "tid=70b36c9e-ea08-48c2-b28e-0dd535b39982;exp=1760850265;sku=no_auth_limited_copilot;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;malfil=1;agent_mode=1;mcp=1;8kp=1;ip=103.135.103.18;asn=AS38136:55183d53996e868667171d1850e50f4b318ee14f91da013658423649da8279e9",
+					"tracking_id": "70b36c9e-ea08-48c2-b28e-0dd535b39982",
+					"vsc_electron_fetcher_v2": false,
+					"xcode": false,
+					"xcode_chat": false
+				}
+			`;
+			let data = data1;
+
+			response = new Response(200,
+				"",
+				new Map(),
+				() => {
+					return Promise.resolve(data);;
+				},
+				() => {
+					return Promise.resolve({});
+				},
+				() => {
+					return Promise.resolve(Readable.from(data));
+				}
+			);
 		}
-
-
-		let config = vscode.workspace.getConfiguration('github.copilot.baseModel');
-		let apiurl = config.has('url') ? config.get('url') : "https://api.individual.githubcopilot.com";
-
-		// NOTE - TOKEN 验证
-		let data = JSON.parse(`
-		{
-			"annotations_enabled": false,
-			"blackbird_clientside_indexing": false,
-			"chat_enabled": true,
-			"chat_jetbrains_enabled": false,
-			"code_quote_enabled": false,
-			"code_review_enabled": false,
-			"codesearch": false,
-			"copilotignore_enabled": false,
-			"endpoints": {
-				"api": "${apiurl}",
-				"origin-tracker": "https://origin-tracker.individual.githubcopilot.com",
-				"proxy": "https://proxy.individual.githubcopilot.com",
-				"telemetry": "https://telemetry.individual.githubcopilot.com"
-			},
-			"expires_at": 2760850265,
-			"individual": false,
-			"prompt_8k": true,
-			"public_suggestions": "disabled",
-			"refresh_in": 300,
-			"sku": "no_auth_limited_copilot",
-			"snippy_load_test_enabled": false,
-			"telemetry": "disabled",
-			"token": "tid=70b36c9e-ea08-48c2-b28e-0dd535b39982;exp=1760850265;sku=no_auth_limited_copilot;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;malfil=1;agent_mode=1;mcp=1;8kp=1;ip=103.135.103.18;asn=AS38136:55183d53996e868667171d1850e50f4b318ee14f91da013658423649da8279e9",
-			"tracking_id": "70b36c9e-ea08-48c2-b28e-0dd535b39982",
-			"vsc_electron_fetcher_v2": false,
-			"xcode": false,
-			"xcode_chat": false
-		}
-		`);
-
-		let response2 = new Response(200,
-			"",
-			new Map(),
-			() => {
-				return Promise.resolve(JSON.stringify(data));;
-			},
-			() => {
-				return Promise.resolve(data);
-			},
-			() => {
-				return Promise.resolve(data);
-			}
-		);
-
-		let response = response2;
 
         // ...
     }
 ```
 
+
+
+
 # 模型配置
 
-## 全部模型获取
 
 写死模型配置，**写死的模型配置并不能被使用，只是为了让代码运行通过**
 
@@ -111,32 +147,30 @@
 		const requestMetadata = { type: RequestType.Models, isModelLab: this._isModelLab };
 
 		try {
-			// const response = await getRequest(
-			// 	this._fetcher,
-			// 	this._telemetryService,
-			// 	this._capiClientService,
-			// 	requestMetadata,
-			// 	copilotToken,
-			// 	await createRequestHMAC(process.env.HMAC_SECRET),
-			// 	'model-access',
-			// 	requestId,
-			// );
+			let models;
 
-			// this._lastFetchTime = Date.now();
-			// this._logService.info(`Fetched model metadata in ${Date.now() - requestStartTime}ms ${requestId}`);
+			try {
+				const response = await getRequest(
+					this._fetcher,
+					this._telemetryService,
+					this._capiClientService,
+					requestMetadata,
+					copilotToken,
+					await createRequestHMAC(process.env.HMAC_SECRET),
+					'model-access',
+					requestId,
+				);
 
-			// if (response.status < 200 || response.status >= 300) {
-			// 	// If we're rate limited and have models, we should just return
-			// 	if (response.status === 429 && this._familyMap.size > 0) {
-			// 		this._logService.warn(`Rate limited while fetching models ${requestId}`);
-			// 		return;
-			// 	}
-			// 	throw new Error(`Failed to fetch models (${requestId}): ${(await response.text()) || response.statusText || `HTTP ${response.status}`}`);
-			// }
+				this._lastFetchTime = Date.now();
+				this._logService.info(`Fetched model metadata in ${Date.now() - requestStartTime}ms ${requestId}`);
 
-			this._familyMap.clear();
+				if (!response.ok) {
+					throw Error('failed to request');
+				}
 
-			let models = JSON.parse(`
+				models = (await response.json()).data;
+			} catch (e) {
+				models = JSON.parse(`
 				    [
 						{
 							"auto": true,
@@ -262,7 +296,7 @@
 								]
 							},
 							"capabilities": {
-								"family": "gpt-3.5-turbo",
+								"family": "text-embedding-3-small",
 								"limits": {
 									"max_context_window_tokens": 16384,
 									"max_output_tokens": 4096,
@@ -274,7 +308,7 @@
 									"tool_calls": true
 								},
 								"tokenizer": "cl100k_base",
-								"type": "chat"
+								"type": "embeddings"
 							},
 							"id": "gpt-3.5-turbo",
 							"is_chat_default": false,
@@ -837,6 +871,13 @@
 						}
 					]
 			`);
+			}
+			// NOTE - 模型配置，只是用于通过验证，实际配置利用 OAI 插件
+			this._familyMap.clear();
+
+
+			const data: IModelAPIResponse[] = models as IModelAPIResponse[];
+			// const data: IModelAPIResponse[] = (await response.json()).data;
             // ...
     }
 ```
@@ -861,40 +902,58 @@
         if (existingToken && !isExpired) {
             headers['Copilot-Session-Token'] = existingToken;
         }
+		let data: AutoModeAPIResponse;
+		try {
+			let config = workspace.getConfiguration('github.copilot').get('forceOffline');
+			if (config) {
+				throw Error('offline');
+			}
 
-        // const response = await this._capiClientService.makeRequest<Response>({
-        // 	json: {
-        // 		"auto_mode": { "model_hints": ["auto"] },
-        // 	},
-        // 	headers,
-        // 	method: 'POST'
-        // }, { type: RequestType.AutoModels });
-        // const data: AutoModeAPIResponse = await response.json() as AutoModeAPIResponse;
-
-        // NOTE - 模型会话
-        let data: AutoModeAPIResponse = JSON.parse(
-            `
-            {
-                "available_models": [
-                    "gpt-5-mini"
-                ],
-                "selected_model": "gpt-5-mini",
-                "session_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdmFpbGFibGVfbW9kZWxzIjpbImdwdC01LW1pbmkiXSwic2VsZWN0ZWRfbW9kZWwiOiJncHQtNS1taW5pIiwic3ViIjoiNzBiMzZjOWUtZWEwOC00OGMyLWIyOGUtMGRkNTM1YjM5OTgyIiwiaWF0IjoxNzYwMDI5OTEzLCJleHAiOjE3NjAwMzM1MTMsImRpc2NvdW50ZWRfY29zdHMiOnsiZ3B0LTUtbWluaSI6MC4xfX0.0ldG2uQkBiuiC7BtHHbFvqFrEsxo50L5Jaai5BZWoRd9M_lX8hWr-waNdx6zQ1qVQUIVnwa-AIw7ENHvPNMvIw",
-                "expires_at": 2770033513,
-                "discounted_costs": {
-                    "gpt-5-mini": 0.1
-                }
-            }
-            `
-        );
+			const response = await this._capiClientService.makeRequest<Response>({
+				json: {
+					"auto_mode": { "model_hints": ["auto"] },
+				},
+				headers,
+				method: 'POST'
+			}, { type: RequestType.AutoModels });
+			data = await response.json() as AutoModeAPIResponse;
+		} catch (e) {
+			data = JSON.parse(
+				`
+			{
+				"available_models": [
+					"gpt-5-mini"
+				],
+				"selected_model": "gpt-5-mini",
+				"session_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdmFpbGFibGVfbW9kZWxzIjpbImdwdC01LW1pbmkiXSwic2VsZWN0ZWRfbW9kZWwiOiJncHQtNS1taW5pIiwic3ViIjoiNzBiMzZjOWUtZWEwOC00OGMyLWIyOGUtMGRkNTM1YjM5OTgyIiwiaWF0IjoxNzYwMDI5OTEzLCJleHAiOjE3NjAwMzM1MTMsImRpc2NvdW50ZWRfY29zdHMiOnsiZ3B0LTUtbWluaSI6MC4xfX0.0ldG2uQkBiuiC7BtHHbFvqFrEsxo50L5Jaai5BZWoRd9M_lX8hWr-waNdx6zQ1qVQUIVnwa-AIw7ENHvPNMvIw",
+				"expires_at": 2770033513,
+				"discounted_costs": {
+					"gpt-5-mini": 0.1
+				}
+			}
+			`
+			);
+		}
         // ..
     }
 ```
 
-# 修改基本模型
+# 网络请求
 
 ```ts
 // src\platform\networking\common\networking.ts
+
+
+export interface IEndpointBody {
+	// ......
+	/** Embeddings endpoints only: */
+	dimensions?: number;
+	embed?: boolean;
+	encoding_format?: string;
+	/** Chunking endpoints: */
+	// ..
+}
+
 function networkRequest(
 	fetcher: IFetcher,
 	telemetryService: ITelemetryService,
@@ -924,7 +983,18 @@ function networkRequest(
 
 
 	let config = vscode.workspace.getConfiguration('github.copilot.baseModel');
+	if (typeof endpoint.urlOrRequestMetadata !== 'string') {
+		let type = endpoint.urlOrRequestMetadata.type;
+		if (type == RequestType.DotcomEmbeddings
+			|| type == RequestType.CAPIEmbeddings
+			|| type == RequestType.Chunks
+			|| type == RequestType.EmbeddingsCodeSearch) {
+			config = vscode.workspace.getConfiguration('github.copilot.embeddingModel');
+		}
+	}
+
 	let apikey = config.has('apikey') ? config.get('apikey') : secretKey;
+
 
 	const headers: ReqHeaders = {
 		Authorization: `Bearer ${apikey}`,
@@ -949,7 +1019,340 @@ function networkRequest(
 		body.top_p = config.has('top_p') ? config.get('top_p') : body.top_p;
 		body.stream = config.has('stream') ? config.get('strean') : body.stream;
 		body.n = config.has('n') ? config.get('n') : body.n;
+		body.dimensions = config.has('dimensions') ? config.get('dimensions') : body.dimensions;
+		body.encoding_format = config.has('encoding_format') ? config.get('encoding_format') : body.encoding_format;
 	}
 	// ....
+
+	let url: string = config.has('url') ? config.get('url') as string : "https://api.githubcopilot.com";
+
+	let token: CopilotToken = {
+		endpoints: {
+			api: url,
+		},
+		sku: 'free_limited_copilot'
+	};
+	capiClientService.updateDomains(token, url);
+
+	return capiClientService.makeRequest(request, endpoint.urlOrRequestMetadata as RequestMetadata);
 }
 ```
+
+
+# Embedding 模型
+
+## index.js
+
+```js
+// node_modules\@vscode\copilot-api\dist\index.js
+  updateDomains(e, t) {
+    let o = this._dotcomAPIUrl,
+      r = this._capiBaseUrl,
+      n = this._telemetryBaseUrl,
+      c = this._proxyBaseUrl;
+    return (
+      this._enterpriseUrlConfig !== t &&
+      ((this._enterpriseUrlConfig = t),
+        (this._dotcomAPIUrl = this._getCAPIUrl(e))),
+		// ....
+  }
+```
+
+## GithubAvailableEmbeddingTypesManager
+
+```ts
+	//src\platform\workspaceChunkSearch\common\githubAvailableEmbeddingTypes.ts
+	private async getAllAvailableTypes(silent: boolean): Promise<GetAvailableTypesResult> {
+		if (this._cached) {
+			const oldCached = this._cached;
+			try {
+				const cachedResult = await this._cached;
+				if (cachedResult.isOk()) {
+					return cachedResult;
+				}
+			} catch {
+				// noop
+			}
+
+			if (this._cached === oldCached) {
+				this._cached = undefined;
+			}
+		}
+
+		this._cached = (async () => {
+			try {
+				const anySession = await this._authService.getAnyGitHubSession({ silent });
+				if (!anySession) {
+					return Result.error<GetAvailableTypesError>({ type: 'noSession' });
+				}
+
+				const initialResult = await this.doGetAvailableTypes(anySession.accessToken);
+				if (initialResult.isOk()) {
+					return initialResult;
+				}
+
+				const permissiveSession = await this._authService.getPermissiveGitHubSession({ silent, createIfNone: !silent ? true : undefined });
+				if (!permissiveSession) {
+					return initialResult;
+				}
+				return this.doGetAvailableTypes(permissiveSession.accessToken);
+			} catch (e) {
+				const primary: EmbeddingType[] = [];
+				const deprecated: EmbeddingType[] = [];
+
+				let config = workspace.getConfiguration('github.copilot.embeddingModel');
+				if (config.has('enable') && config.get('enable')) {
+					primary.push(new EmbeddingType('text-embedding-3-small-512'));
+				} else {
+					this._logService.error('Error fetching available embedding types', e);
+
+					return Result.error<GetAvailableTypesError>({
+						type: 'requestFailed',
+						error: e
+					});
+				}
+				return Result.ok({ primary, deprecated });
+			}
+		})();
+
+		return this._cached;
+	}
+
+	private async doGetAvailableTypes(token: string): Promise<GetAvailableTypesResult> {
+		let response: Response;
+		try {
+			response = await getRequest(
+				this._fetcherService,
+				this._telemetryService,
+				this._capiClientService,
+				{ type: RequestType.EmbeddingsModels },
+				token,
+				await createRequestHMAC(env.HMAC_SECRET),
+				'copilot-panel',
+				generateUuid(),
+				undefined,
+				getGithubMetadataHeaders(new CallTracker(), this._envService)
+			);
+		} catch (e) {
+			this._logService.error('Error fetching available embedding types', e);
+			return Result.error<GetAvailableTypesError>({
+				type: 'requestFailed',
+				error: e
+			});
+		}
+
+		if (!response.ok) {
+			throw Error('Failed to fetch available embedding types');
+			/* __GDPR__
+				"githubAvailableEmbeddingTypes.getAvailableTypes.error" : {
+					"owner": "mjbvz",
+					"comment": "Information about failed githubAvailableEmbeddingTypes calls",
+					"statusCode": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "The response status code" }
+				}
+			*/
+			// this._telemetryService.sendMSFTTelemetryEvent('githubAvailableEmbeddingTypes.getAvailableTypes.error', {}, {
+			// 	statusCode: response.status,
+			// });
+
+			// // Also treat 404s as unauthorized since this typically indicates that the user is anonymous
+			// if (response.status === 401 || response.status === 404) {
+			// 	return Result.error<GetAvailableTypesError>({ type: 'unauthorized', status: response.status });
+			// }
+
+			// return Result.error<GetAvailableTypesError>({
+			// 	type: 'badResponse',
+			// 	status: response.status
+			// });
+		}
+		// ...
+	}
+```
+
+## @vscode/copilot-api
+
+```js
+// node_modules\@vscode\copilot-api\dist\index.js
+  _getDotComAPIUrl() {
+    if (this._enterpriseUrlConfig)
+      try {
+        // let e = new URL(this._enterpriseUrlConfig);
+        // return `${e.protocol}//api.${e.hostname}${e.port ? ':' + e.port : ''}`;
+        return this._enterpriseUrlConfig;
+      } catch (e) {
+        return (
+          console.warn(
+            'Failed to parse enterprise URL config:',
+            this._enterpriseUrlConfig,
+            e,
+          ),
+          'https://api.github.com'
+        );
+      }
+    return 'https://api.github.com';
+  }
+```
+
+## remoteEmbeddingsComputer
+
+```ts
+// src\platform\embeddings\common\remoteEmbeddingsComputer.ts
+	public async computeEmbeddings(
+		embeddingType: EmbeddingType,
+		inputs: readonly string[],
+		options?: ComputeEmbeddingsOptions,
+		telemetryInfo?: TelemetryCorrelationId,
+		cancellationToken?: CancellationToken,
+	): Promise<Embeddings> {
+		return logExecTime(this._logService, 'RemoteEmbeddingsComputer::computeEmbeddings', async () => {
+
+			let config = workspace.getConfiguration('github.copilot.embeddingModel');
+
+			// Determine endpoint type: use CAPI for no-auth users, otherwise use GitHub
+			const copilotToken = await this._authService.getCopilotToken();
+			if (config.has('enable') && config.get('enable')) {
+				const embeddings = await this.computeCAPIEmbeddings(inputs, options, cancellationToken);
+				return embeddings ?? { type: embeddingType, values: [] };
+			}
+
+			const token = (await this._authService.getAnyGitHubSession({ silent: true }))?.accessToken;
+
+			// ....
+		}
+	}
+```
+
+```ts
+	public async rawEmbeddingsFetch(
+		type: EmbeddingTypeInfo,
+		endpoint: IEmbeddingsEndpoint,
+		requestId: string,
+		inputs: readonly string[],
+		cancellationToken: CancellationToken | undefined
+	): Promise<CAPIEmbeddingResults | CAPIEmbeddingError> {
+		try {
+			let token = '';
+			try {
+				token = (await this._authService.getCopilotToken()).token;
+			} catch (e) {
+
+			}
+			// ..
+		}
+	}
+```
+
+# package.json
+
+```json
+	"github.copilot.forceOffline": {
+		"type": "boolean",
+		"default": true,
+		"description": "debug"
+	},
+	"github.copilot.baseModel": {
+		"type": "object",
+		"default": {},
+		"tags": [
+			"experimental"
+		],
+		"properties": {
+			"model": {
+				"type": "string",
+				"description": "The model identifier to use for the request"
+			},
+			"url": {
+				"type": "string",
+				"description": "model url"
+			},
+			"apikey": {
+				"type": "string",
+				"description": "api key"
+			},
+			"max_tokens": {
+				"type": "integer",
+				"minimum": 1,
+				"description": "Maximum number of tokens to generate in the response"
+			},
+			"max_output_tokens": {
+				"type": "integer",
+				"minimum": 1,
+				"description": "Maximum number of output tokens to generate"
+			},
+			"max_completion_tokens": {
+				"type": "integer",
+				"minimum": 1,
+				"description": "Maximum number of completion tokens to generate"
+			},
+			"temperature": {
+				"type": "number",
+				"minimum": 0,
+				"maximum": 2,
+				"description": "Sampling temperature for response randomness (0-2)"
+			},
+			"top_p": {
+				"type": "number",
+				"minimum": 0,
+				"maximum": 1,
+				"description": "Nucleus sampling parameter (0-1)"
+			},
+			"stream": {
+				"type": "boolean",
+				"description": "Whether to stream the response progressively"
+			},
+			"n": {
+				"type": "integer",
+				"minimum": 1,
+				"description": "Number of chat completion choices to generate for each input message"
+			}
+		},
+		"required": [
+			"model",
+			"url",
+			"apikey"
+		]
+	},
+	"github.copilot.embeddingModel": {
+		"type": "object",
+		"default": {},
+		"tags": [
+			"experimental"
+		],
+		"properties": {
+			"enable": {
+				"type": "boolean",
+				"default": false,
+				"description": "enable embedding model"
+			},
+			"model": {
+				"type": "string",
+				"description": "The model identifier to use for the request"
+			},
+			"url": {
+				"type": "string",
+				"description": "model url"
+			},
+			"apikey": {
+				"type": "string",
+				"description": "api key"
+			},
+			"dimensions": {
+				"type": "integer",
+				"default": 1024,
+				"description": "The number of dimensions for the embedding"
+			},
+			"encoding_format": {
+				"type": "string",
+				"default":"float",
+				"enum": ["float", "base64"],
+				"description": "The encoding format for the embedding"
+			}
+		},
+		"required": [
+			"enable",
+			"model",
+			"url",
+			"apikey"
+		]
+	}
+```
+

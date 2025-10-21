@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RequestType } from '@vscode/copilot-api';
-import type { CancellationToken } from 'vscode';
+import { workspace, type CancellationToken } from 'vscode';
 import { createRequestHMAC } from '../../../util/common/crypto';
 import { CallTracker, TelemetryCorrelationId } from '../../../util/common/telemetryCorrelationId';
 import { Limiter } from '../../../util/vs/base/common/async';
@@ -56,23 +56,16 @@ export class RemoteEmbeddingsComputer implements IEmbeddingsComputer {
 	): Promise<Embeddings> {
 		return logExecTime(this._logService, 'RemoteEmbeddingsComputer::computeEmbeddings', async () => {
 
+			let config = workspace.getConfiguration('github.copilot.embeddingModel');
+
 			// Determine endpoint type: use CAPI for no-auth users, otherwise use GitHub
 			const copilotToken = await this._authService.getCopilotToken();
-			if (copilotToken.isNoAuthUser) {
+			if (config.has('enable') && config.get('enable')) {
 				const embeddings = await this.computeCAPIEmbeddings(inputs, options, cancellationToken);
 				return embeddings ?? { type: embeddingType, values: [] };
 			}
 
-			let token;
-			try {
-				token = (await this._authService.getAnyGitHubSession({ silent: true }))?.accessToken;
-				if (!token) {
-					throw new Error('No authentication token available');
-				}
-			} catch (e) {
-				token = '';
-			}
-			// const token = '';
+			const token = (await this._authService.getAnyGitHubSession({ silent: true }))?.accessToken;
 
 			const embeddingsOut: Embedding[] = [];
 			for (let i = 0; i < inputs.length; i += this.batchSize) {
@@ -94,7 +87,7 @@ export class RemoteEmbeddingsComputer implements IEmbeddingsComputer {
 					this._fetcherService,
 					this._telemetryService,
 					this._capiClientService,
-					{ type: RequestType.CAPIEmbeddings },
+					{ type: RequestType.DotcomEmbeddings },
 					token,
 					await createRequestHMAC(env.HMAC_SECRET),
 					'copilot-panel',
@@ -270,7 +263,12 @@ export class RemoteEmbeddingsComputer implements IEmbeddingsComputer {
 		cancellationToken: CancellationToken | undefined
 	): Promise<CAPIEmbeddingResults | CAPIEmbeddingError> {
 		try {
-			const token = await this._authService.getCopilotToken();
+			let token = '';
+			try {
+				token = (await this._authService.getCopilotToken()).token;
+			} catch (e) {
+
+			}
 
 			const body = { input: inputs, model: type.model, dimensions: type.dimensions };
 			endpoint.interceptBody?.(body);
@@ -279,7 +277,7 @@ export class RemoteEmbeddingsComputer implements IEmbeddingsComputer {
 				this._telemetryService,
 				this._capiClientService,
 				endpoint,
-				token.token,
+				token,
 				await createRequestHMAC(env.HMAC_SECRET),
 				'copilot-panel',
 				requestId,

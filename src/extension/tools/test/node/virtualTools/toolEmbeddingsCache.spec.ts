@@ -5,33 +5,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 import { Embedding, EmbeddingType, IEmbeddingsComputer } from '../../../../../platform/embeddings/common/embeddingsComputer';
-import { ILogService } from '../../../../../platform/log/common/logService';
 import { ITestingServicesAccessor } from '../../../../../platform/test/node/services';
 import { CancellationToken } from '../../../../../util/vs/base/common/cancellation';
 import { IInstantiationService } from '../../../../../util/vs/platform/instantiation/common/instantiation';
 import { createExtensionUnitTestingServices } from '../../../../test/node/services';
-import { IToolEmbeddingsCache, ToolEmbeddingsComputer } from '../../../common/virtualTools/toolEmbeddingsComputer';
-
-class TestToolEmbeddingsComputer extends ToolEmbeddingsComputer {
-	constructor(
-		private readonly _testCache: Map<string, Embedding>,
-		@IEmbeddingsComputer embeddingsComputer: IEmbeddingsComputer,
-		@ILogService logService: ILogService,
-		@IInstantiationService instantiationService: IInstantiationService,
-	) {
-		super(embeddingsComputer, logService, instantiationService);
-	}
-	protected override getCaches(instantiationService: IInstantiationService) {
-		return {
-			embeddingType: EmbeddingType.text3small_512,
-			caches: [{
-				initialize: () => Promise.resolve(),
-				get: t => this._testCache.get(t.name),
-				set: () => { /* no-op */ }
-			} satisfies IToolEmbeddingsCache]
-		};
-	}
-}
+import { ToolEmbeddingsComputer } from '../../../common/virtualTools/toolEmbeddingsCache';
 
 
 describe('ToolEmbeddingsComputer', () => {
@@ -40,7 +18,9 @@ describe('ToolEmbeddingsComputer', () => {
 	let embeddingsComputerMock: { _serviceBrand: undefined; computeEmbeddings: Mock };
 
 	function createToolEmbeddingComputer(embeddings: Map<string, Embedding>) {
-		const computer = accessor.get(IInstantiationService).createInstance(TestToolEmbeddingsComputer, embeddings);
+		const computer = accessor.get(IInstantiationService).createInstance(ToolEmbeddingsComputer);
+		vi.spyOn(computer['embeddingsCache'], 'getEmbeddings').mockResolvedValue(embeddings);
+
 		return computer;
 	}
 
@@ -64,7 +44,7 @@ describe('ToolEmbeddingsComputer', () => {
 	});
 
 	it('should return empty array when no tools are available', async () => {
-		const availableTools = [] as any;
+		const availableTools = new Set<string>();
 		const queryEmbedding = createMockEmbedding([1, 0, 0]);
 
 		const computer = createToolEmbeddingComputer(new Map());
@@ -81,7 +61,7 @@ describe('ToolEmbeddingsComputer', () => {
 	});
 
 	it('should return tool names for available tools', async () => {
-		const availableTools = [{ name: 'tool1' }, { name: 'tool2' }] as any;
+		const availableTools = new Set(['tool1', 'tool2']);
 		const queryEmbedding = createMockEmbedding([1, 0, 0]);
 
 		const computer = createToolEmbeddingComputer(new Map([
@@ -109,7 +89,7 @@ describe('ToolEmbeddingsComputer', () => {
 	});
 
 	it('should respect count parameter', async () => {
-		const availableTools = [{ name: 'tool1' }, { name: 'tool2' }, { name: 'tool3' }] as any;
+		const availableTools = new Set(['tool1', 'tool2', 'tool3']);
 		const queryEmbedding = createMockEmbedding([1, 0, 0]);
 
 		const computer = createToolEmbeddingComputer(new Map([
@@ -137,7 +117,7 @@ describe('ToolEmbeddingsComputer', () => {
 	});
 
 	it('should maintain order from ranking function', async () => {
-		const availableTools = [{ name: 'tool1' }, { name: 'tool2' }, { name: 'tool3' }] as any;
+		const availableTools = new Set(['tool1', 'tool2', 'tool3']);
 		const queryEmbedding = createMockEmbedding([1, 0, 0]);
 
 		const computer = createToolEmbeddingComputer(new Map([
@@ -167,7 +147,7 @@ describe('ToolEmbeddingsComputer', () => {
 	});
 
 	it('should handle partial cache hits and compute missing embeddings', async () => {
-		const availableTools = [{ name: 'tool1' }, { name: 'tool2' }, { name: 'tool3' }, { name: 'tool4' }] as any;
+		const availableTools = new Set(['tool1', 'tool2', 'tool3', 'tool4']);
 		const queryEmbedding = createMockEmbedding([1, 0, 0]);
 
 
@@ -199,11 +179,11 @@ describe('ToolEmbeddingsComputer', () => {
 		expect(result[0]).toBe('tool1');
 		expect(result[1]).toBe('tool4');
 		expect(embeddingsComputerMock.computeEmbeddings).toHaveBeenCalledTimes(1);
-		expect(embeddingsComputerMock.computeEmbeddings.mock.calls[0][1]).toEqual(['tool3\n\nundefined', 'tool4\n\nundefined']);
+		expect(embeddingsComputerMock.computeEmbeddings.mock.calls[0][1]).toEqual(['tool3', 'tool4']);
 	});
 
 	it('shoulds cache computed embeddings for future use', async () => {
-		const availableTools = [{ name: 'tool1' }, { name: 'tool2' }, { name: 'tool3' }] as any;
+		const availableTools = new Set(['tool1', 'tool2', 'tool3']);
 		const queryEmbedding = createMockEmbedding([1, 0, 0]);
 
 		const computer = createToolEmbeddingComputer(new Map([
@@ -234,7 +214,7 @@ describe('ToolEmbeddingsComputer', () => {
 		expect(result[0]).toBe('tool1');
 		expect(result[1]).toBe('tool3');
 		expect(embeddingsComputerMock.computeEmbeddings).toHaveBeenCalledTimes(1);
-		expect(embeddingsComputerMock.computeEmbeddings.mock.calls[0][1]).toEqual(['tool2\n\nundefined', 'tool3\n\nundefined']);
+		expect(embeddingsComputerMock.computeEmbeddings.mock.calls[0][1]).toEqual(['tool2', 'tool3']);
 
 		result = await computer.retrieveSimilarEmbeddingsForAvailableTools(
 			queryEmbedding,

@@ -42,7 +42,6 @@ import { SummarizedConversationHistoryMetadata } from '../../prompts/node/agent/
 import { normalizeToolSchema } from '../../tools/common/toolSchemaNormalizer';
 import { ToolCallCancelledError } from '../../tools/common/toolsService';
 import { IToolGrouping, IToolGroupingService } from '../../tools/common/virtualTools/virtualToolTypes';
-import { ChatVariablesCollection } from '../common/chatVariablesCollection';
 import { Conversation, getUniqueReferences, GlobalContextMessageMetadata, IResultMetadata, RenderedUserMessageMetadata, RequestDebugInformation, ResponseStreamParticipant, Turn, TurnStatus } from '../common/conversation';
 import { IBuildPromptContext, IToolCallRound } from '../common/intents';
 import { ChatTelemetry, ChatTelemetryBuilder } from './chatParticipantTelemetry';
@@ -50,6 +49,7 @@ import { IntentInvocationMetadata } from './conversation';
 import { IDocumentContext } from './documentContext';
 import { IBuildPromptResult, IIntent, IIntentInvocation, IResponseProcessor } from './intents';
 import { ConversationalBaseTelemetryData, createTelemetryWithId, sendModelMessageTelemetry } from './telemetry';
+import { ChatVariablesCollection } from '../common/chatVariablesCollection';
 
 export interface IDefaultIntentRequestHandlerOptions {
 	maxToolCallIterations: number;
@@ -576,7 +576,8 @@ class DefaultToolCallingLoop extends ToolCallingLoop<IDefaultToolLoopOptions> {
 	private _didParallelToolCallLoop?: boolean;
 	private async _doMirroredCallWithVirtualTools(delta: IResponseDelta, messages: Raw.ChatMessage[], requestOptions: OptionalChatRequestParams) {
 		const shouldDo = !this._didParallelToolCallLoop
-			&& this._copilotTokenStore.copilotToken?.isInternal;
+			&& this._copilotTokenStore.copilotToken?.isInternal
+			&& !this.toolGrouping?.isEnabled;
 		if (!shouldDo) {
 			return;
 		}
@@ -717,7 +718,13 @@ class DefaultToolCallingLoop extends ToolCallingLoop<IDefaultToolLoopOptions> {
 			}
 		}
 
-		const computePromise = this.toolGrouping.compute(this.options.request.prompt, token);		// Show progress if this takes a moment...
+		if (!this.toolGrouping.isEnabled) {
+			return tools;
+		}
+
+		const computePromise = this.toolGrouping.compute(this.options.request.prompt, token);
+
+		// Show progress if this takes a moment...
 		const timeout = setTimeout(() => {
 			outputStream?.progress(localize('computingTools', 'Optimizing tool selection...'), async () => {
 				await computePromise;

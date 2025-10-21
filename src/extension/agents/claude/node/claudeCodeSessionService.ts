@@ -173,9 +173,7 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 		try {
 			entries = await this._fileSystem.readDirectory(projectDirUri);
 		} catch (e) {
-			if (e.code !== 'FileNotFound') {
-				this._logService.error(e, `[ClaudeChatSessionItemProvider] ${e.code} Failed to read directory: ${projectDirUri}`);
-			}
+			this._logService.error(e, `[ClaudeChatSessionItemProvider] Failed to read directory: ${projectDirUri}`);
 			return [];
 		}
 
