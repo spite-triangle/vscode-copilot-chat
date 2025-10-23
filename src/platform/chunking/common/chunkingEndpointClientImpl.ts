@@ -4,8 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RequestType } from '@vscode/copilot-api';
-import { createRequestHMAC } from '../../../util/common/crypto';
-import { CallTracker } from '../../../util/common/telemetryCorrelationId';
+import { workspace } from 'vscode';
+import { createRequestHMAC, createSha256Hash } from '../../../util/common/crypto';
+import { CallTracker, TelemetryCorrelationId } from '../../../util/common/telemetryCorrelationId';
 import { coalesce } from '../../../util/vs/base/common/arrays';
 import { DeferredPromise, raceCancellationError, timeout } from '../../../util/vs/base/common/async';
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
@@ -16,7 +17,7 @@ import { env } from '../../../util/vs/base/common/process';
 import { isFalsyOrWhitespace } from '../../../util/vs/base/common/strings';
 import { Range } from '../../../util/vs/editor/common/core/range';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
-import { Embedding, EmbeddingType, EmbeddingVector } from '../../embeddings/common/embeddingsComputer';
+import { Embedding, EmbeddingType, EmbeddingVector, IEmbeddingsComputer } from '../../embeddings/common/embeddingsComputer';
 import { ICAPIClientService } from '../../endpoint/common/capiClient';
 import { IEnvService } from '../../env/common/envService';
 import { logExecTime } from '../../log/common/logExecTime';
@@ -28,6 +29,7 @@ import { ITelemetryService } from '../../telemetry/common/telemetry';
 import { getWorkspaceFileDisplayPath, IWorkspaceService } from '../../workspace/common/workspaceService';
 import { FileChunkWithEmbedding, FileChunkWithOptionalEmbedding } from './chunk';
 import { ChunkableContent, ComputeBatchInfo, EmbeddingsComputeQos, IChunkingEndpointClient } from './chunkingEndpointClient';
+import { IChunkingService } from './chunkingService';
 import { stripChunkTextMetadata } from './chunkingStringUtils';
 
 type RequestTask = (attempt: number) => Promise<Response>;
@@ -298,6 +300,8 @@ export class ChunkingEndpointClientImpl extends Disposable implements IChunkingE
 	private readonly _requestHmac = new Lazy(() => createRequestHMAC(env.HMAC_SECRET));
 
 	constructor(
+		@IChunkingService private readonly _apiChunkingService: IChunkingService,
+		@IEmbeddingsComputer private readonly embeddingsComputer: IEmbeddingsComputer,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ICAPIClientService private readonly _capiClientService: ICAPIClientService,
 		@IEnvService private readonly _envService: IEnvService,
@@ -312,13 +316,110 @@ export class ChunkingEndpointClientImpl extends Disposable implements IChunkingE
 	}
 
 	public computeChunks(authToken: string, embeddingType: EmbeddingType, content: ChunkableContent, batchInfo: ComputeBatchInfo, qos: EmbeddingsComputeQos, cache: ReadonlyMap<string, FileChunkWithEmbedding> | undefined, telemetryInfo: CallTracker, token: CancellationToken): Promise<readonly FileChunkWithOptionalEmbedding[] | undefined> {
-		return this.doComputeChunksAndEmbeddings(authToken, embeddingType, content, batchInfo, { qos, computeEmbeddings: false }, cache, telemetryInfo, token);
+		return this.doComputeChunksAndEmbeddingsOffline(authToken, embeddingType, content, batchInfo, { qos, computeEmbeddings: false }, cache, telemetryInfo, token);
 	}
 
 	public async computeChunksAndEmbeddings(authToken: string, embeddingType: EmbeddingType, content: ChunkableContent, batchInfo: ComputeBatchInfo, qos: EmbeddingsComputeQos, cache: ReadonlyMap<string, FileChunkWithEmbedding> | undefined, telemetryInfo: CallTracker, token: CancellationToken): Promise<readonly FileChunkWithEmbedding[] | undefined> {
-		const result = await this.doComputeChunksAndEmbeddings(authToken, embeddingType, content, batchInfo, { qos, computeEmbeddings: true }, cache, telemetryInfo, token);
+		const result = await this.doComputeChunksAndEmbeddingsOffline(authToken, embeddingType, content, batchInfo, { qos, computeEmbeddings: true }, cache, telemetryInfo, token);
 		return result as FileChunkWithEmbedding[] | undefined;
 	}
+
+
+	private async doComputeChunksAndEmbeddingsOffline(
+		authToken: string,
+		embeddingType: EmbeddingType,
+		content: ChunkableContent,
+		batchInfo: ComputeBatchInfo,
+		options: {
+			qos: EmbeddingsComputeQos;
+			computeEmbeddings: boolean;
+		},
+		cache: ReadonlyMap<string, FileChunkWithEmbedding> | undefined,
+		telemetryInfo: CallTracker,
+		token: CancellationToken
+	): Promise<readonly FileChunkWithOptionalEmbedding[] | undefined> {
+		const text = await raceCancellationError(content.getText(), token);
+		if (isFalsyOrWhitespace(text)) {
+			return [];
+		}
+
+		try {
+			// 1. 使用 NaiveChunkingService 进行分块
+			let maxToken = workspace.getConfiguration('github.copilot.embeddingModel').get('max_chunk_tokens', 250);
+			let check = workspace.getConfiguration('github.copilot.embeddingModel').get('check_chunk_token', true);
+			const chunks = await this._apiChunkingService.chunkFile(
+				content.uri,
+				text,
+				{
+					maxTokenLength: maxToken, // 或从配置中获取
+					validateChunkLengths: check
+				},
+				token
+			);
+
+			let fileChunks: FileChunkWithOptionalEmbedding[] = new Array();
+
+			// 2. 如果需要嵌入向量，计算嵌入
+			if (options.computeEmbeddings) {
+				const chunkStrings = chunks.map(chunk => chunk.text);
+
+				// 3. 使用 OpenAI /embeddings API 计算嵌入
+				const embeddings = await this.embeddingsComputer.computeEmbeddings(
+					embeddingType,
+					chunkStrings,
+					{ inputType: 'document' },
+					new TelemetryCorrelationId('LocalChunkingAndEmbeddingService'),
+					token
+				);
+
+				for (let index = 0; index < chunks.length; index++) {
+					const embedding = embeddings.values[index];
+					const chunk = chunks[index];
+					if (typeof chunk.text !== "string" || !chunk.rawText) {
+						continue;
+					}
+
+					let hash = await createSha256Hash(chunk.rawText);
+					fileChunks.push(
+						{
+							chunk: chunk,
+							chunkHash: hash,
+							embedding: embedding
+						}
+					)
+				}
+			} else {
+
+				for (let chunk of chunks) {
+					if (typeof chunk.text !== "string" || !chunk.rawText) {
+						continue;
+					}
+
+					let hash = await createSha256Hash(chunk.rawText);
+					const cached = cache?.get(hash);
+					if (cached) {
+						fileChunks.push({
+							chunk: chunk,
+							chunkHash: hash,
+							embedding: cached.embedding,
+						});
+					} else {
+						fileChunks.push({
+							chunk: chunk,
+							chunkHash: hash,
+							embedding: undefined
+						});
+					}
+				}
+			}
+
+			return coalesce(fileChunks);
+		} catch (error) {
+			this._logService.error('Error in local chunking and embedding:', error);
+			return undefined;
+		}
+	}
+
 
 	private async doComputeChunksAndEmbeddings(
 		authToken: string,

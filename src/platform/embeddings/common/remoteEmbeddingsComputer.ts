@@ -59,13 +59,16 @@ export class RemoteEmbeddingsComputer implements IEmbeddingsComputer {
 			let config = workspace.getConfiguration('github.copilot.embeddingModel');
 
 			// Determine endpoint type: use CAPI for no-auth users, otherwise use GitHub
-			const copilotToken = await this._authService.getCopilotToken();
+			// const copilotToken = await this._authService.getCopilotToken();
 			if (config.has('enable') && config.get('enable')) {
 				const embeddings = await this.computeCAPIEmbeddings(inputs, options, cancellationToken);
 				return embeddings ?? { type: embeddingType, values: [] };
 			}
 
 			const token = (await this._authService.getAnyGitHubSession({ silent: true }))?.accessToken;
+			if (!token) {
+				throw Error('getAnyGitHubSession error');
+			}
 
 			const embeddingsOut: Embedding[] = [];
 			for (let i = 0; i < inputs.length; i += this.batchSize) {
@@ -207,6 +210,7 @@ export class RemoteEmbeddingsComputer implements IEmbeddingsComputer {
 
 			embeddings = (await Promise.all(promises)).flatMap(response => response?.embeddings ?? []);
 		} catch (e) {
+			console.log(e);
 			return undefined;
 		} finally {
 			limiter.dispose();

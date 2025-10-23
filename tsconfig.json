@@ -4,8 +4,7 @@
 		"jsx": "react",
 		"jsxFactory": "vscpp",
 		"jsxFragmentFactory": "vscppf",
-		"noUnusedParameters": false,
-		"noUnusedLocals": false,
+				"moduleResolution": "node",
 		"rootDir": ".",
 		"types": [
 			"minimist",
@@ -24,6 +23,7 @@
 			"#types": ["./src/extension/completions-core/types/src"]
 		}
 	},
+
 	"include": [
 		"vscodeTypes.ts",
 		"src",

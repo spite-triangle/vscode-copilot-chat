@@ -8,7 +8,7 @@ import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { Uri } from '../../../vscodeTypes';
 import { ITokenizerProvider, TokenizationEndpoint } from '../../tokenizer/node/tokenizer';
 import { FileChunk } from '../common/chunk';
-import { MAX_CHUNK_SIZE_TOKENS, NaiveChunker } from './naiveChunker';
+import { get_max_chunk_size_token, NaiveChunker } from './naiveChunker';
 
 interface NaiveChunkingOptions {
 	/**
@@ -40,7 +40,7 @@ export class NaiveChunkingService implements INaiveChunkingService {
 	) { }
 
 	async chunkFile(endpoint: TokenizationEndpoint, uri: Uri, text: string, options: NaiveChunkingOptions, token: CancellationToken): Promise<FileChunk[]> {
-		const maxTokenLength = options?.maxTokenLength ?? MAX_CHUNK_SIZE_TOKENS;
+		const maxTokenLength = options?.maxTokenLength ?? get_max_chunk_size_token();
 
 		const out = await this.getNaiveChunker(endpoint).chunkFile(uri, text, { maxTokenLength }, token);
 		if (options?.validateChunkLengths) {

@@ -364,8 +364,9 @@ function networkRequest(
 		let token: CopilotToken = {
 			endpoints: {
 				api: url,
+				proxy: url
 			},
-			sku: 'free_limited_copilot'
+			sku: 'yearly_subscriber'
 		};
 		capiClientService.updateDomains(token, url);
 

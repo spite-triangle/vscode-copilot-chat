@@ -1029,8 +1029,9 @@ function networkRequest(
 	let token: CopilotToken = {
 		endpoints: {
 			api: url,
+			proxy: url
 		},
-		sku: 'free_limited_copilot'
+		sku: 'yearly_subscriber'
 	};
 	capiClientService.updateDomains(token, url);
 
@@ -1056,6 +1057,43 @@ function networkRequest(
         (this._dotcomAPIUrl = this._getCAPIUrl(e))),
 		// ....
   }
+```
+
+## embeddingsEndpoint
+
+```ts
+// src\platform\endpoint\node\embeddingsEndpoint.ts
+export class EmbeddingEndpoint implements IEmbeddingsEndpoint {
+	public readonly maxBatchSize: number;
+	public readonly modelMaxPromptTokens: number;
+	public readonly tokenizer: TokenizerType;
+
+	public readonly name = this._modelInfo.name;
+	public readonly version = this._modelInfo.version;
+	public readonly family = this._modelInfo.capabilities.family;
+
+	constructor(
+		private _modelInfo: IEmbeddingModelInformation,
+		@ITokenizerProvider private readonly _tokenizerProvider: ITokenizerProvider
+	) {
+		let config = workspace.getConfiguration('github.copilot.embeddingModel');
+
+		this.tokenizer = config.get('tokenzier', this._modelInfo.capabilities.tokenizer);
+		this.maxBatchSize = config.get('max_chunk_bacth', this._modelInfo.capabilities.limits?.max_inputs ?? 256);
+		this.modelMaxPromptTokens = config.get('max_chunk_tokens', 250);
+		GlobalChunkingDefaults.maxTokenLength = config.get('max_chunk_tokens', 250);
+		GlobalChunkingDefaults.strategy = config.get('chunk_strategy', 'token');
+	}
+
+	public acquireTokenizer(): ITokenizer {
+		return this._tokenizerProvider.acquireTokenizer(this);
+	}
+
+	public get urlOrRequestMetadata(): string | RequestMetadata {
+		return { type: RequestType.CAPIEmbeddings, modelId: LEGACY_EMBEDDING_MODEL_ID.TEXT3SMALL };
+	}
+}
+
 ```
 
 ## GithubAvailableEmbeddingTypesManager
@@ -1168,6 +1206,33 @@ function networkRequest(
 	}
 ```
 
+## workspaceChunkSearchService
+
+```ts
+// src\platform\workspaceChunkSearch\node\workspaceChunkSearchService.ts
+	private async tryInit(silent: boolean): Promise<WorkspaceChunkSearchServiceImpl | undefined> {
+		const enable = workspace.getConfiguration('github.copilot.embeddingModel').get('enable') as boolean;
+		if (!enable) {
+			return undefined;
+		}
+
+		if (this._impl) {
+			return this._impl;
+		}
+
+		try {
+			// const best = await this._availableEmbeddingTypes.getPreferredType(silent);
+			const best = new EmbeddingType('text-embedding-3-small-512');
+			// Double check that we haven't initialized in the meantime
+			if (this._impl) {
+				return this._impl;
+			}
+			// ....
+		}
+		// ....
+	}
+```
+
 ## @vscode/copilot-api
 
 ```js
@@ -1208,13 +1273,16 @@ function networkRequest(
 			let config = workspace.getConfiguration('github.copilot.embeddingModel');
 
 			// Determine endpoint type: use CAPI for no-auth users, otherwise use GitHub
-			const copilotToken = await this._authService.getCopilotToken();
+			// const copilotToken = await this._authService.getCopilotToken();
 			if (config.has('enable') && config.get('enable')) {
 				const embeddings = await this.computeCAPIEmbeddings(inputs, options, cancellationToken);
 				return embeddings ?? { type: embeddingType, values: [] };
 			}
 
 			const token = (await this._authService.getAnyGitHubSession({ silent: true }))?.accessToken;
+			if (!token) {
+				throw Error('getAnyGitHubSession error');
+			}
 
 			// ....
 		}
@@ -1240,6 +1308,165 @@ function networkRequest(
 		}
 	}
 ```
+
+## chunkingEndpointClientImpl.ts
+
+```ts
+// src\platform\chunking\common\chunkingEndpointClientImpl.ts
+export class ChunkingEndpointClientImpl extends Disposable implements IChunkingEndpointClient {
+	declare readonly _serviceBrand: undefined;
+
+	/**
+	 * Limiter for request to the chunks endpoint.
+	 */
+	private readonly _requestLimiter: RequestRateLimiter;
+
+	private readonly _requestHmac = new Lazy(() => createRequestHMAC(env.HMAC_SECRET));
+
+	constructor(
+		@INaiveChunkingService private readonly naiveChunkingService: INaiveChunkingService,
+		@IEmbeddingsComputer private readonly embeddingsComputer: IEmbeddingsComputer,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@ICAPIClientService private readonly _capiClientService: ICAPIClientService,
+		@IEnvService private readonly _envService: IEnvService,
+		@IFetcherService private readonly _fetcherService: IFetcherService,
+		@ILogService private readonly _logService: ILogService,
+		@ITelemetryService private readonly _telemetryService: ITelemetryService,
+		@IWorkspaceService private readonly _workspaceService: IWorkspaceService,
+	) {
+		super();
+
+		this._requestLimiter = this._register(instantiationService.createInstance(RequestRateLimiter));
+	}
+
+	public computeChunks(authToken: string, embeddingType: EmbeddingType, content: ChunkableContent, batchInfo: ComputeBatchInfo, qos: EmbeddingsComputeQos, cache: ReadonlyMap<string, FileChunkWithEmbedding> | undefined, telemetryInfo: CallTracker, token: CancellationToken): Promise<readonly FileChunkWithOptionalEmbedding[] | undefined> {
+		return this.doComputeChunksAndEmbeddingsOffline(authToken, embeddingType, content, batchInfo, { qos, computeEmbeddings: false }, cache, telemetryInfo, token);
+	}
+
+	public async computeChunksAndEmbeddings(authToken: string, embeddingType: EmbeddingType, content: ChunkableContent, batchInfo: ComputeBatchInfo, qos: EmbeddingsComputeQos, cache: ReadonlyMap<string, FileChunkWithEmbedding> | undefined, telemetryInfo: CallTracker, token: CancellationToken): Promise<readonly FileChunkWithEmbedding[] | undefined> {
+		const result = await this.doComputeChunksAndEmbeddingsOffline(authToken, embeddingType, content, batchInfo, { qos, computeEmbeddings: true }, cache, telemetryInfo, token);
+		return result as FileChunkWithEmbedding[] | undefined;
+	}
+
+
+	private async doComputeChunksAndEmbeddingsOffline(
+		authToken: string,
+		embeddingType: EmbeddingType,
+		content: ChunkableContent,
+		batchInfo: ComputeBatchInfo,
+		options: {
+			qos: EmbeddingsComputeQos;
+			computeEmbeddings: boolean;
+		},
+		cache: ReadonlyMap<string, FileChunkWithEmbedding> | undefined,
+		telemetryInfo: CallTracker,
+		token: CancellationToken
+	): Promise<readonly FileChunkWithOptionalEmbedding[] | undefined> {
+		const text = await raceCancellationError(content.getText(), token);
+		if (isFalsyOrWhitespace(text)) {
+			return [];
+		}
+
+		try {
+			// 1. 使用 NaiveChunkingService 进行分块
+			let maxToken = workspace.getConfiguration('github.copilot.embeddingModel').get('max_chunk_tokens', 250);
+			let check = workspace.getConfiguration('github.copilot.embeddingModel').get('check_chunk_token', true);
+			const chunks = await this.naiveChunkingService.chunkFile(
+				{ tokenizer: TokenizerType.O200K },
+				content.uri,
+				text,
+				{
+					maxTokenLength: maxToken, // 或从配置中获取
+					validateChunkLengths: check
+				},
+				token
+			);
+
+			let fileChunks: FileChunkWithOptionalEmbedding[] = new Array();
+
+			// 2. 如果需要嵌入向量，计算嵌入
+			if (options.computeEmbeddings) {
+				const chunkStrings = chunks.map(chunk => chunk.text);
+
+				// 3. 使用 OpenAI /embeddings API 计算嵌入
+				const embeddings = await this.embeddingsComputer.computeEmbeddings(
+					embeddingType,
+					chunkStrings,
+					{ inputType: 'document' },
+					new TelemetryCorrelationId('LocalChunkingAndEmbeddingService'),
+					token
+				);
+
+				for (let index = 0; index < chunks.length; index++) {
+					const embedding = embeddings.values[index];
+					const chunk = chunks[index];
+					if (typeof chunk.text !== "string" || !chunk.rawText) {
+						continue;
+					}
+
+					let hash = await createSha256Hash(chunk.rawText);
+					fileChunks.push(
+						{
+							chunk: chunk,
+							chunkHash: hash,
+							embedding: embedding
+						}
+					)
+				}
+			} else {
+
+				for (let chunk of chunks) {
+					if (typeof chunk.text !== "string" || !chunk.rawText) {
+						continue;
+					}
+
+					let hash = await createSha256Hash(chunk.rawText);
+					const cached = cache?.get(hash);
+					if (cached) {
+						fileChunks.push({
+							chunk: chunk,
+							chunkHash: hash,
+							embedding: cached.embedding,
+						});
+					} else {
+						fileChunks.push({
+							chunk: chunk,
+							chunkHash: hash,
+							embedding: undefined
+						});
+					}
+				}
+			}
+
+			return coalesce(fileChunks);
+		} catch (error) {
+			this._logService.error('Error in local chunking and embedding:', error);
+			return undefined;
+		}
+	}
+
+	// .....
+}
+```
+
+## naiveChunker
+
+使用 `chonkie` 库重新实现
+
+```ts
+// src\platform\chunking\node\naiveChunker.ts
+
+```
+
+## chunkingService
+
+使用依赖注入的方式实现在前端能调用 `naiveChunker` 的功能
+
+```ts
+// src\platform\chunking\common\chunkingService.ts
+// src\platform\chunking\node\chunkingServiceImpl.ts
+```
+
 
 # package.json
 
@@ -1342,16 +1569,54 @@ function networkRequest(
 			},
 			"encoding_format": {
 				"type": "string",
-				"default":"float",
-				"enum": ["float", "base64"],
+				"default": "float",
+				"enum": [
+					"float",
+					"base64"
+				],
 				"description": "The encoding format for the embedding"
+			},
+			"check_chunk_token": {
+				"type": "boolean",
+				"default": true,
+				"description": "check the size of chunk token before request embedding"
+			},
+			"chunk_strategy":{
+				"type": "string",
+				"default" : "token",
+				"enum": ["token","sentence", "recursive", "code"],
+				"description": "how to generate chunk"
+			},
+			"max_chunk_tokens": {
+				"type": "integer",
+				"default": 250,
+				"minimum": 1,
+				"description": "Maximum number of tokens to chunk"
+			},
+			"max_chunk_bacth": {
+				"type": "integer",
+				"default": 10,
+				"minimum": 1,
+				"description": "Maximum number of chunk to request embedding"
+			},
+			"tokenzier": {
+				"type": "string",
+				"default": "o200k_base",
+				"enum": [
+					"cl100k_base",
+					"o200k_base"
+				],
+				"description": "tokenzier"
 			}
 		},
 		"required": [
 			"enable",
 			"model",
 			"url",
-			"apikey"
+			"apikey",
+			"tokenzier",
+			"max_chunk_tokens",
+			"max_chunk_bacth"
 		]
 	}
 ```

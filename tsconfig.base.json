@@ -4,10 +4,11 @@
 		"target": "es2022",
 		"lib": ["ES2022"],
 		"sourceMap": true,
-
+		"moduleResolution": "node",
 		"experimentalDecorators": true,
 		"noImplicitOverride": true,
-		"noUnusedLocals": true,
+		"noUnusedLocals": false,
+		"noUnusedParameters": false,
 		"useDefineForClassFields": false,
 		"allowUnreachableCode": false,
 		"strict": true,

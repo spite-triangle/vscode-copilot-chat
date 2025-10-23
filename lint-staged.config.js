@@ -16,11 +16,11 @@ const removeIgnoredFiles = async (files) => {
 	return filteredFiles.join(' ');
 };
 
-module.exports = {
-	'!({.esbuild.ts,test/simulation/fixtures/**,test/scenarios/**,.vscode/extensions/**,**/vscode.proposed.*})*{.ts,.js,.tsx}': async (files) => {
-		const filesToLint = await removeIgnoredFiles(files);
-		return [
-			`npm run tsfmt -- ${filesToLint}`,
-		];
-	},
-};
+// module.exports = {
+// 	'!({.esbuild.ts,test/simulation/fixtures/**,test/scenarios/**,.vscode/extensions/**,**/vscode.proposed.*})*{.ts,.js,.tsx}': async (files) => {
+// 		const filesToLint = await removeIgnoredFiles(files);
+// 		return [
+// 			`npm run tsfmt -- ${filesToLint}`,
+// 		];
+// 	},
+// };

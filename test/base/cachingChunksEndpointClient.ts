@@ -11,6 +11,7 @@ import { CallTracker } from '../../src/util/common/telemetryCorrelationId';
 import { CancellationToken } from '../../src/util/vs/base/common/cancellation';
 import { URI } from '../../src/util/vs/base/common/uri';
 import { Range } from '../../src/util/vs/editor/common/core/range';
+import { SyncDescriptor } from '../../src/util/vs/platform/instantiation/common/descriptors';
 import { IInstantiationService } from '../../src/util/vs/platform/instantiation/common/instantiation';
 import { CHUNKING_ENDPOINT_CACHE_SALT } from '../cacheSalt';
 import { SQLiteCache } from './cache';
@@ -70,7 +71,7 @@ export class CachingChunkingEndpointClient implements IChunkingEndpointClient {
 		private readonly _cache: IChunkingEndpointClientCache,
 		@IInstantiationService instantiationService: IInstantiationService,
 	) {
-		this._chunkingEndpointClient = instantiationService.createInstance(ChunkingEndpointClientImpl);
+		this._chunkingEndpointClient = instantiationService.createInstance(new SyncDescriptor(ChunkingEndpointClientImpl));
 	}
 
 	async computeChunksAndEmbeddings(authToken: string, embeddingType: EmbeddingType, content: ChunkableContent, batchInfo: ComputeBatchInfo, qos: EmbeddingsComputeQos, cache: ReadonlyMap</* hash */string, FileChunkWithEmbedding> | undefined, telemetryInfo: CallTracker, token: CancellationToken): Promise<readonly FileChunkWithEmbedding[] | undefined> {

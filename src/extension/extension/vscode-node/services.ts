@@ -14,6 +14,8 @@ import { IChatAgentService } from '../../../platform/chat/common/chatAgents';
 import { IChatMLFetcher } from '../../../platform/chat/common/chatMLFetcher';
 import { IChunkingEndpointClient } from '../../../platform/chunking/common/chunkingEndpointClient';
 import { ChunkingEndpointClientImpl } from '../../../platform/chunking/common/chunkingEndpointClientImpl';
+import { IChunkingService } from '../../../platform/chunking/common/chunkingService';
+import { ChunkingServiceImpl } from '../../../platform/chunking/node/chunkingServiceImpl';
 import { INaiveChunkingService, NaiveChunkingService } from '../../../platform/chunking/node/naiveChunkerService';
 import { IDevContainerConfigurationService } from '../../../platform/devcontainer/common/devContainerConfigurationService';
 import { IDiffService } from '../../../platform/diff/common/diffService';
@@ -24,6 +26,7 @@ import { IEndpointProvider } from '../../../platform/endpoint/common/endpointPro
 import { CAPIClientImpl } from '../../../platform/endpoint/node/capiClientImpl';
 import { DomainService } from '../../../platform/endpoint/node/domainServiceImpl';
 import { INativeEnvService, isScenarioAutomation } from '../../../platform/env/common/envService';
+import { NativeEnvServiceImpl } from '../../../platform/env/vscode-node/nativeEnvServiceImpl';
 import { IGitCommitMessageService } from '../../../platform/git/common/gitCommitMessageService';
 import { IGitDiffService } from '../../../platform/git/common/gitDiffService';
 import { IGithubRepositoryService } from '../../../platform/github/common/githubService';
@@ -102,7 +105,6 @@ import { LanguageContextServiceImpl } from '../../typescriptContext/vscode-node/
 import { IWorkspaceListenerService } from '../../workspaceRecorder/common/workspaceListenerService';
 import { WorkspacListenerService } from '../../workspaceRecorder/vscode-node/workspaceListenerService';
 import { registerServices as registerCommonServices } from '../vscode/services';
-import { NativeEnvServiceImpl } from '../../../platform/env/vscode-node/nativeEnvServiceImpl';
 
 // ###########################################################################################
 // ###                                                                                     ###
@@ -195,6 +197,7 @@ export function registerServices(builder: IInstantiationServiceBuilder, extensio
 	builder.define(IWorkspaceListenerService, new SyncDescriptor(WorkspacListenerService));
 	builder.define(ICodeSearchAuthenticationService, new SyncDescriptor(VsCodeCodeSearchAuthenticationService));
 	builder.define(ITodoListContextProvider, new SyncDescriptor(TodoListContextProvider));
+	builder.define(IChunkingService, new SyncDescriptor(ChunkingServiceImpl));
 }
 
 function setupMSFTExperimentationService(builder: IInstantiationServiceBuilder, extensionContext: ExtensionContext) {

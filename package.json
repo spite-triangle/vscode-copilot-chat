@@ -2431,16 +2431,57 @@
 							},
 							"encoding_format": {
 								"type": "string",
-								"default":"float",
-								"enum": ["float", "base64"],
+								"default": "float",
+								"enum": [
+									"float",
+									"base64"
+								],
 								"description": "The encoding format for the embedding"
+							},
+							"check_chunk_token": {
+								"type": "boolean",
+								"default": true,
+								"description": "check the size of chunk token before request embedding"
+							},
+							"chunk_strategy": {
+								"type": "string",
+								"default": "token",
+								"enum": [
+									"token",
+									"recursive"
+								],
+								"description": "how to generate chunk"
+							},
+							"max_chunk_tokens": {
+								"type": "integer",
+								"default": 250,
+								"minimum": 1,
+								"description": "Maximum number of tokens to chunk"
+							},
+							"max_chunk_bacth": {
+								"type": "integer",
+								"default": 10,
+								"minimum": 1,
+								"description": "Maximum number of chunk to request embedding"
+							},
+							"tokenzier": {
+								"type": "string",
+								"default": "o200k_base",
+								"enum": [
+									"cl100k_base",
+									"o200k_base"
+								],
+								"description": "tokenzier"
 							}
 						},
 						"required": [
 							"enable",
 							"model",
 							"url",
-							"apikey"
+							"apikey",
+							"tokenzier",
+							"max_chunk_tokens",
+							"max_chunk_bacth"
 						]
 					}
 				}
@@ -4376,6 +4417,7 @@
 	"dependencies": {
 		"@anthropic-ai/claude-code": "^1.0.120",
 		"@anthropic-ai/sdk": "^0.63.0",
+		"@chonkiejs/core": "^0.0.5",
 		"@humanwhocodes/gitignore-to-minimatch": "1.0.2",
 		"@microsoft/tiktokenizer": "^1.0.10",
 		"@vscode/copilot-api": "^0.1.10",

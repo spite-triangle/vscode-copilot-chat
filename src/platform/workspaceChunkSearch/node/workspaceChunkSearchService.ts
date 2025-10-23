@@ -5,6 +5,7 @@
 
 import * as l10n from '@vscode/l10n';
 import type * as vscode from 'vscode';
+import { workspace } from 'vscode';
 import { createFencedCodeBlock, getLanguageId } from '../../../util/common/markdown';
 import { Result } from '../../../util/common/result';
 import { createServiceIdentifier } from '../../../util/common/services';
@@ -22,7 +23,7 @@ import { ChatResponseProgressPart2 } from '../../../vscodeTypes';
 import { IAuthenticationService } from '../../authentication/common/authentication';
 import { IAuthenticationChatUpgradeService } from '../../authentication/common/authenticationUpgrade';
 import { FileChunk, FileChunkAndScore } from '../../chunking/common/chunk';
-import { MAX_CHUNK_SIZE_TOKENS } from '../../chunking/node/naiveChunker';
+import { get_max_chunk_size_token } from '../../chunking/node/naiveChunker';
 import { distance, Embedding, EmbeddingDistance, Embeddings, EmbeddingType, IEmbeddingsComputer } from '../../embeddings/common/embeddingsComputer';
 import { IVSCodeExtensionContext } from '../../extContext/common/extensionContext';
 import { IIgnoreService } from '../../ignore/common/ignoreService.js';
@@ -130,7 +131,8 @@ export class WorkspaceChunkSearchService extends Disposable implements IWorkspac
 	}
 
 	private async tryInit(silent: boolean): Promise<WorkspaceChunkSearchServiceImpl | undefined> {
-		if (!this._authenticationService.copilotToken || this._authenticationService.copilotToken.isNoAuthUser) {
+		const enable = workspace.getConfiguration('github.copilot.embeddingModel').get('enable') as boolean;
+		if (!enable) {
 			return undefined;
 		}
 
@@ -139,7 +141,8 @@ export class WorkspaceChunkSearchService extends Disposable implements IWorkspac
 		}
 
 		try {
-			const best = await this._availableEmbeddingTypes.getPreferredType(silent);
+			// const best = await this._availableEmbeddingTypes.getPreferredType(silent);
+			const best = new EmbeddingType('text-embedding-3-small-512');
 			// Double check that we haven't initialized in the meantime
 			if (this._impl) {
 				return this._impl;
@@ -641,7 +644,7 @@ class WorkspaceChunkSearchServiceImpl extends Disposable implements IWorkspaceCh
 	private getMaxChunks(sizing: WorkspaceChunkSearchSizing): number {
 		let maxResults: number | undefined;
 		if (typeof sizing.tokenBudget === 'number') {
-			maxResults = Math.floor(sizing.tokenBudget / MAX_CHUNK_SIZE_TOKENS);
+			maxResults = Math.floor(sizing.tokenBudget / get_max_chunk_size_token());
 		}
 
 		if (typeof sizing.maxResults === 'number') {
