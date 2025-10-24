@@ -146,42 +146,41 @@ export abstract class BaseCopilotTokenManager extends Disposable implements ICop
 				return { kind: 'failure', reason: 'FailedToGetToken' };
 			}
 		} catch {
-			// '{"sku":"yearly_subscriber","token":"tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761006846;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f","expire_at":1761006846,"prompt_8k":true,"telemetry":"disabled","expires_at":1761006846,"individual":true,"refresh_in":86400,"nes_enabled":true,"tracking_id":"…r":false,"code_quote_enabled":true,"public_suggestions":"disabled","annotations_enabled":true,"vsc_electron_fetcher":false,"copilotignore_enabled":false,"chat_jetbrains_enabled":true,"intellij_editor_fetcher":false,"snippy_load_test_enabled":false,"copilot_ide_agent_chat_gpt4_small_prompt":false,"code_review_enabled":false,"codesearch":true,"limited_user_quotas":{"chat":500,"completions":2000},"limited_user_reset_date":1761006846,"vsc_electron_fetcher_v2":false,"xcode_chat":false,"xcode":true}'
 			// NOTE - TOKEN 验证
 			let data1 = `
 				{
-					"sku": "yearly_subscriber",
-					"token": "tid=b42207b857c9db3b7b4e71fce67a4070;exp=1761007296;sku=yearly_subscriber;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;rt=1;8kp=1;ip=175.152.125.150;asn=AS4134;cq=2000;rd=1744502400:d13adeb7feb5cc90d19080e54bc76420ae3d97ad5bf4d9ab844f474f7dc14b7f",
-					"expire_at": 2761007296,
-					"prompt_8k": true,
-					"telemetry": "disabled",
-					"expires_at": 2761007296,
-					"individual": true,
-					"refresh_in": 86400,
-					"nes_enabled": true,
-					"tracking_id": "b42207b857c9db3b7b4e71fce67a4070",
-					"chat_enabled": true,
-					"vsc_panel_v2": false,
-					"vs_editor_fetcher": false,
-					"code_quote_enabled": true,
-					"public_suggestions": "disabled",
 					"annotations_enabled": true,
-					"vsc_electron_fetcher": false,
-					"copilotignore_enabled": false,
+					"blackbird_clientside_indexing": false,
+					"chat_enabled": true,
 					"chat_jetbrains_enabled": true,
-					"intellij_editor_fetcher": false,
-					"snippy_load_test_enabled": false,
-					"copilot_ide_agent_chat_gpt4_small_prompt": false,
-					"code_review_enabled": false,
+					"code_quote_enabled": true,
+					"code_review_enabled": true,
 					"codesearch": true,
-					"limited_user_quotas": {
-						"chat": 500,
-						"completions": 2000
+					"copilotignore_enabled": false,
+					"endpoints": {
+						"api": "https://api.business.githubcopilot.com",
+						"origin-tracker": "https://origin-tracker.business.githubcopilot.com",
+						"proxy": "https://proxy.business.githubcopilot.com",
+						"telemetry": "https://telemetry.business.githubcopilot.com"
 					},
-					"limited_user_reset_date": 1761007296,
+					"expires_at": 2761321757,
+					"individual": false,
+					"limited_user_quotas": null,
+					"limited_user_reset_date": null,
+					"organization_list": [
+						"184531bbdd2fc3x8eee45c6c7e42aeb6"
+					],
+					"prompt_8k": true,
+					"public_suggestions": "disabled",
+					"refresh_in": 1500,
+					"sku": "copilot_for_business_seat_quota",
+					"snippy_load_test_enabled": false,
+					"telemetry": "disabled",
+					"token": "tid=25521c7a46180619297ead903f249eac;ol=084531bbdd2fc328eee45c6c7e42aeb6;exp=1761321757;sku=copilot_for_business_seat_quota;proxy-ep=proxy.business.githubcopilot.com;st=dotcom;ssc=1;chat=1;cit=1;malfil=1;editor_preview_features=1;agent_mode=1;mcp=1;ccr=1;8kp=1;ip=112.193.141.65;asn=AS4837:3ef201993d9faf6623bb22a45a66a74480b5f6bc7afcee57d1e40ad3109afcde",
+					"tracking_id": "25521c7a46180619297ead903f249eac",
 					"vsc_electron_fetcher_v2": false,
-					"xcode_chat": false,
-					"xcode": true
+					"xcode": true,
+					"xcode_chat": false
 				}
 			`;
 
