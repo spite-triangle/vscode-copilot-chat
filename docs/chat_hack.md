@@ -939,6 +939,8 @@
 
 # 网络请求
 
+## networking
+
 ```ts
 // src\platform\networking\common\networking.ts
 
@@ -984,11 +986,12 @@ function networkRequest(
 	let config = vscode.workspace.getConfiguration('github.copilot.baseModel');
 	if (typeof endpoint.urlOrRequestMetadata !== 'string') {
 		let type = endpoint.urlOrRequestMetadata.type;
-		if (type == RequestType.DotcomEmbeddings
-			|| type == RequestType.CAPIEmbeddings
-			|| type == RequestType.Chunks
-			|| type == RequestType.EmbeddingsCodeSearch) {
+		if (type == RequestType.CAPIEmbeddings) {
 			config = vscode.workspace.getConfiguration('github.copilot.embeddingModel');
+		} else if (type == RequestType.ProxyCompletions) {
+			config = vscode.workspace.getConfiguration('github.copilot.codeModel');
+		} else if (type == RequestType.ProxyChatCompletions) {
+			config = vscode.workspace.getConfiguration('github.copilot.codeModel');
 		}
 	}
 
@@ -1039,8 +1042,6 @@ function networkRequest(
 ```
 
 
-# Embedding 模型
-
 ## index.js
 
 ```js
@@ -1056,7 +1057,37 @@ function networkRequest(
         (this._dotcomAPIUrl = this._getCAPIUrl(e))),
 		// ....
   }
+
+  async makeRequest(e, t) {
+    let { type: o } = t;
+    switch ((await this._mixinHeaders(e, t), o)) {
+      case 'CopilotToken':
+        return this._fetcherService.fetch(
+          this._domainService.tokenURL,
+          e,
+        );
+      case 'CopilotNLToken':
+        return this._fetcherService.fetch(
+          this._domainService.tokenNoAuthURL,
+          e,
+        );
+      case 'ProxyCompletions':
+        return this._fetcherService.fetch(
+          `${this._domainService.proxyBaseURL}/chat/completions`,
+          e,
+        );
+      case 'ProxyChatCompletions':
+        return this._fetcherService.fetch(
+          `${this._domainService.proxyBaseURL}/chat/completions`,
+          e,
+        );
+	// ...............
+	}
 ```
+
+
+# Embedding 模型
+
 
 ## embeddingsEndpoint
 
@@ -1466,6 +1497,24 @@ export class ChunkingEndpointClientImpl extends Disposable implements IChunkingE
 // src\platform\chunking\node\chunkingServiceImpl.ts
 ```
 
+
+# 下一步建议
+
+```ts
+	// src\extension\xtab\node\xtabProvider.ts
+	private async doGetNextEditWithSelection
+		// ...........
+		const prediction = this.getPredictedOutput(editWindowLines, promptOptions.promptingStrategy);
+
+		const messages = [
+			{
+				role: Raw.ChatRole.System,
+				content: toTextParts(this.pickSystemPrompt(promptOptions.promptingStrategy))
+			},
+			{ role: Raw.ChatRole.User, content: toTextParts(userPrompt) },
+			{ role: Raw.ChatRole.Assistant, content: toTextParts(typeof prediction?.content === 'string' ? prediction.content : "") }
+		] satisfies Raw.ChatMessage[];
+```
 
 # package.json
 

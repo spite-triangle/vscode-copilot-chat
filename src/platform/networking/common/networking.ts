@@ -290,6 +290,10 @@ function networkRequest(
 		let type = endpoint.urlOrRequestMetadata.type;
 		if (type == RequestType.CAPIEmbeddings) {
 			config = vscode.workspace.getConfiguration('github.copilot.embeddingModel');
+		} else if (type == RequestType.ProxyCompletions) {
+			config = vscode.workspace.getConfiguration('github.copilot.codeModel');
+		} else if (type == RequestType.ProxyChatCompletions) {
+			config = vscode.workspace.getConfiguration('github.copilot.codeModel');
 		}
 	}
 
@@ -318,6 +322,7 @@ function networkRequest(
 		body.top_p = config.has('top_p') ? config.get('top_p') : body.top_p;
 		body.stream = config.has('stream') ? config.get('strean') : body.stream;
 		body.n = config.has('n') ? config.get('n') : body.n;
+		body.n = config.has('n_max') && body.n ? Math.min(config.get('n_max') as number, body.n) : body.n;
 		body.dimensions = config.has('dimensions') ? config.get('dimensions') : body.dimensions;
 		body.encoding_format = config.has('encoding_format') ? config.get('encoding_format') : body.encoding_format;
 	}

@@ -341,7 +341,8 @@ export class XtabProvider implements IStatelessNextEditProvider {
 				role: Raw.ChatRole.System,
 				content: toTextParts(this.pickSystemPrompt(promptOptions.promptingStrategy))
 			},
-			{ role: Raw.ChatRole.User, content: toTextParts(userPrompt) }
+			{ role: Raw.ChatRole.User, content: toTextParts(userPrompt) },
+			{ role: Raw.ChatRole.Assistant, content: toTextParts(typeof prediction?.content === 'string' ? prediction.content : "") }
 		] satisfies Raw.ChatMessage[];
 
 		logContext.setPrompt(messages);
